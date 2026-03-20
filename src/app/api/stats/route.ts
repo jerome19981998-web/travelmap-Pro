@@ -15,7 +15,7 @@ export async function GET() {
 
   // Build continent breakdown
   const continentMap: Record<string, Set<string>> = {};
-  (visits || []).forEach((v) => {
+  (visits || [] as any[]).forEach((v: any) => {
     if (!v.continent || !v.country_code) return;
     if (!continentMap[v.continent]) continentMap[v.continent] = new Set();
     continentMap[v.continent].add(v.country_code);
