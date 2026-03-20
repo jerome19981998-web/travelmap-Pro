@@ -21,9 +21,8 @@ export default function LoginPage() {
       toast.error(error.message);
       setLoading(false);
     } else {
-      router.push("/dashboard");
-      router.refresh();
-    }
+  window.location.href = "/dashboard";
+}
   };
 
   const handleOAuth = async (provider: "google" | "github") => {
