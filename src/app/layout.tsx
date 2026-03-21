@@ -6,8 +6,9 @@ import { LocaleProvider } from "@/hooks/useLocale";
 export const metadata: Metadata = {
   title: "TravelMap Pro — Your Journey, Visualized",
   description: "Track, visualize, and share your travel adventures on an interactive world map.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
+  other: {
+  "mobile-web-app-capable": "yes",
+},
     capable: true,
     statusBarStyle: "black-translucent",
     title: "TravelMap Pro",
