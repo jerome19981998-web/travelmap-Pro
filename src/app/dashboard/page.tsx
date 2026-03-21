@@ -6,10 +6,11 @@ export default async function DashboardPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const [{ data: visits }, { data: wishlist }, { data: stats }] = await Promise.all([
+  const [{ data: visits }, { data: wishlist }, { data: stats }, { data: profile }] = await Promise.all([
     supabase.from("visits").select("*, visit_photos(*)").eq("user_id", user!.id).order("visited_at", { ascending: false }),
     supabase.from("wishlist").select("*").eq("user_id", user!.id),
     supabase.from("user_stats").select("*").eq("user_id", user!.id).single(),
+    supabase.from("profiles").select("color_scheme").eq("id", user!.id).single(),
   ]);
 
   return (
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
           visits={visits || []}
           wishlist={wishlist || []}
           userId={user!.id}
+          colorScheme={profile?.color_scheme || "emerald"}
         />
       </div>
     </div>
