@@ -214,3 +214,92 @@ body {
     background-clip: padding-box;
   }
 }
+/* ==========================================
+   MOBILE OPTIMIZATIONS
+   ========================================== */
+
+/* Safe area for notch/home indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+/* Touch targets minimum 44px */
+@media (max-width: 1024px) {
+  button, a {
+    min-height: 44px;
+  }
+
+  /* Bigger map controls on mobile */
+  .leaflet-control-zoom a {
+    width: 40px !important;
+    height: 40px !important;
+    line-height: 40px !important;
+    font-size: 18px !important;
+  }
+
+  /* Full width panels on mobile */
+  .visit-panel-mobile {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--surface-border) !important;
+    top: auto !important;
+    bottom: 72px !important;
+    height: 60vh !important;
+  }
+}
+
+/* Floating add button mobile */
+.fab {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 16px);
+  right: 16px;
+  z-index: 40;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #0d9488);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.fab:hover, .fab:active {
+  transform: scale(1.1);
+  box-shadow: 0 6px 25px rgba(16, 185, 129, 0.5);
+}
+
+/* Hide fab on desktop */
+@media (min-width: 1024px) {
+  .fab { display: none; }
+}
+
+/* Smooth scroll */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Globe canvas */
+canvas {
+  display: block;
+}
+
+/* Mobile map height */
+@media (max-width: 1024px) {
+  .map-container {
+    height: calc(100vh - 56px - 72px) !important;
+  }
+}
+
+/* PWA standalone mode */
+@media (display-mode: standalone) {
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+}
