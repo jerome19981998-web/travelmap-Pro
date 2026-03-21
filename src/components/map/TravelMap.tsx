@@ -235,7 +235,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     <div className="relative w-full h-full bg-[var(--map-bg)]">
 
       {/* Globe/Map toggle — toujours visible en haut à droite */}
-      <div className="absolute top-4 right-4 z-30 flex items-center glass rounded-xl overflow-hidden border border-[var(--surface-border)] shadow-lg">
+<div className="absolute top-4 right-4 z-[9999] flex items-center glass rounded-xl overflow-hidden border border-[var(--surface-border)] shadow-lg" style={{pointerEvents: "all", position: "absolute"}}>
         <button
           onClick={() => setIsGlobe(false)}
           className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${!isGlobe ? "bg-emerald-500/20 text-emerald-300" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
