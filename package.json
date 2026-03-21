@@ -33,7 +33,6 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "react-countup": "^6.5.3",
     "recharts": "^2.12.7",
-    "globe.gl": "^2.27.1"
   },
   "devDependencies": {
     "typescript": "^5",
