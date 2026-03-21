@@ -31,10 +31,21 @@ function getCountryColor(visitCount: number, scheme: string = "emerald"): string
   return colors[idx];
 }
 
+const GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson";
+let cachedGeoJSON: any = null;
+
+async function loadGeoJSON() {
+  if (cachedGeoJSON) return cachedGeoJSON;
+  const res = await fetch(GEOJSON_URL);
+  cachedGeoJSON = await res.json();
+  return cachedGeoJSON;
+}
+
 export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
+  const countryLayersRef = useRef<L.LayerGroup | null>(null);
   const [visits, setVisits] = useState(initialVisits);
   const [wishlist, setWishlist] = useState(initialWishlist);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
@@ -46,25 +57,34 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [colorScheme] = useState("emerald");
   const { t } = useLocale();
 
+  // Init map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+
     const map = L.map(mapContainerRef.current, {
       center: [20, 0], zoom: 2, zoomControl: false, attributionControl: false,
     });
+
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       maxZoom: 19, subdomains: "abcd",
     }).addTo(map);
+
     mapRef.current = map;
     markersRef.current = L.layerGroup().addTo(map);
+    countryLayersRef.current = L.layerGroup().addTo(map);
+
     map.on("click", e => {
       const { lat, lng } = e.latlng;
       setAddCoords({ lat, lng });
       setAddModalOpen(true);
     });
+
     L.control.zoom({ position: "bottomright" }).addTo(map);
+
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
+  // Dark/light toggle
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.eachLayer(layer => {
@@ -76,34 +96,111 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     L.tileLayer(url, { maxZoom: 19, subdomains: "abcd" }).addTo(mapRef.current);
   }, [isDark]);
 
-  const renderMarkers = useCallback(() => {
-    if (!markersRef.current) return;
+  // Render markers + country fills
+  const renderMarkers = useCallback(async () => {
+    if (!markersRef.current || !countryLayersRef.current) return;
     markersRef.current.clearLayers();
+    countryLayersRef.current.clearLayers();
 
     const showCountries = filterMode === "all" || filterMode === "countries";
     const showCities = filterMode === "all" || filterMode === "cities";
     const showNeighborhoods = filterMode === "all" || filterMode === "neighborhoods";
     const showWishlist = filterMode === "all" || filterMode === "wishlist";
 
+    // Count visits per country
     const countryVisitCounts: Record<string, number> = {};
     visits.forEach(v => {
-      if (v.country_code) countryVisitCounts[v.country_code] = (countryVisitCounts[v.country_code] || 0) + 1;
+      if (v.country_code) {
+        const code = v.country_code.toUpperCase();
+        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+      }
     });
 
+    const visitedCountryCodes = new Set(
+      visits.map(v => v.country_code?.toUpperCase()).filter(Boolean) as string[]
+    );
+
+    const wishlistCountryCodes = new Set(
+      wishlist.map(w => w.country_code?.toUpperCase()).filter(Boolean) as string[]
+    );
+
+    // Load GeoJSON and draw country polygons
+    if (showCountries && visitedCountryCodes.size > 0) {
+      try {
+        const geojson = await loadGeoJSON();
+        L.geoJSON(geojson, {
+          filter: (feature: any) => {
+            const code = feature.properties?.ISO_A2?.toUpperCase();
+            return visitedCountryCodes.has(code);
+          },
+          style: (feature: any) => {
+            const code = feature?.properties?.ISO_A2?.toUpperCase();
+            const count = countryVisitCounts[code] || 1;
+            const fillColor = getCountryColor(count, colorScheme);
+            return {
+              fillColor,
+              fillOpacity: 0.5,
+              color: fillColor,
+              weight: 1.5,
+              opacity: 0.8,
+            };
+          },
+          onEachFeature: (feature: any, layer: any) => {
+            const code = feature.properties?.ISO_A2?.toUpperCase();
+            const count = countryVisitCounts[code] || 0;
+            layer.bindTooltip(
+              `<div style="font-weight:600;font-size:13px">${feature.properties?.ADMIN}</div>
+               <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>`,
+              { className: "map-tooltip", sticky: true }
+            );
+            layer.on("click", (e: any) => {
+              L.DomEvent.stopPropagation(e);
+              const countryVisit = visits.find(v => v.country_code?.toUpperCase() === code);
+              if (countryVisit) setSelectedVisit(countryVisit);
+            });
+          },
+        }).addTo(countryLayersRef.current!);
+      } catch (e) {
+        console.error("GeoJSON load failed", e);
+      }
+    }
+
+    // Wishlist country outlines (dashed violet)
+    if (showWishlist && wishlistCountryCodes.size > 0) {
+      try {
+        const geojson = await loadGeoJSON();
+        L.geoJSON(geojson, {
+          filter: (feature: any) => {
+            const code = feature.properties?.ISO_A2?.toUpperCase();
+            return wishlistCountryCodes.has(code) && !visitedCountryCodes.has(code);
+          },
+          style: () => ({
+            fillColor: "#8b5cf6",
+            fillOpacity: 0.15,
+            color: "#8b5cf6",
+            weight: 1.5,
+            opacity: 0.6,
+            dashArray: "5 5",
+          }),
+        }).addTo(countryLayersRef.current!);
+      } catch (e) {
+        console.error("GeoJSON wishlist load failed", e);
+      }
+    }
+
+    // City / neighborhood markers
     visits.forEach(visit => {
       if (!visit.lat || !visit.lng) return;
       const isCity = ["city", "landmark"].includes(visit.place_type);
       const isNeighborhood = visit.place_type === "neighborhood";
-      const isCountry = visit.place_type === "country";
-
-      if (isCountry && !showCountries) return;
+      if (!isCity && !isNeighborhood) return;
       if (isCity && !showCities) return;
       if (isNeighborhood && !showNeighborhoods) return;
 
       const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
-      const visitCount = countryVisitCounts[visit.country_code || ""] || 1;
+      const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
       const color = getCountryColor(visitCount, colorScheme);
-      const size = isCountry ? 10 : isNeighborhood ? 8 : 12;
+      const size = isNeighborhood ? 8 : 12;
 
       const icon = L.divIcon({
         className: "",
@@ -132,14 +229,15 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       markersRef.current!.addLayer(marker);
     });
 
+    // Wishlist point markers
     if (showWishlist) {
       wishlist.forEach(item => {
         if (!item.lat || !item.lng) return;
         const priorityColor = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
         const icon = L.divIcon({
           className: "",
-          html: `<div style="width:12px;height:12px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.4);box-shadow:0 0 0 3px ${priorityColor}40,0 0 12px ${priorityColor}50"></div>`,
-          iconSize: [12, 12], iconAnchor: [6, 6],
+          html: `<div style="width:10px;height:10px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.4);box-shadow:0 0 0 3px ${priorityColor}40"></div>`,
+          iconSize: [10, 10], iconAnchor: [5, 5],
         });
         const marker = L.marker([item.lat, item.lng], { icon });
         marker.bindTooltip(
