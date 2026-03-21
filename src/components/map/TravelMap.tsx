@@ -15,6 +15,7 @@ interface Props {
   visits: (Visit & { visit_photos: { url: string; is_cover: boolean }[] })[];
   wishlist: WishlistItem[];
   userId: string;
+  colorScheme: string;
 }
 
 function getVisitColor(count: number, scheme: string = "emerald"): string {
@@ -55,7 +56,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addCoords, setAddCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [colorScheme] = useState("emerald");
+  // colorScheme vient des props
   const { t } = useLocale();
 
   // ── Init map ──────────────────────────────────────────────────
