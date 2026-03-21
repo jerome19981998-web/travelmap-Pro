@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Search, Moon, Sun, Plus, Map, Heart, Globe, Building2, Home, X, Zap } from "lucide-react";
+import { useState } from "react";
+import { Search, Moon, Sun, Plus, Heart, Globe, Building2, Home, X, Zap } from "lucide-react";
 import type { Visit, WishlistItem } from "@/types/database";
 import { clsx } from "clsx";
 import { useLocale } from "@/hooks/useLocale";
@@ -52,7 +52,7 @@ export default function MapControls({
   const isVisit = (item: Visit | WishlistItem): item is Visit => "rating" in item;
 
   const filters = [
-    { value: "auto" as FilterMode, label: "⚡", title: "Auto", color: "amber" },
+    { value: "auto" as FilterMode, label: "⚡", color: "amber" },
     { value: "countries" as FilterMode, label: t.filterCountries, color: "emerald" },
     { value: "cities" as FilterMode, label: t.filterCities, color: "emerald" },
     { value: "neighborhoods" as FilterMode, label: t.filterNeighborhoods, color: "emerald" },
@@ -68,114 +68,49 @@ export default function MapControls({
 
   return (
     <>
-      {/* Top bar — icônes compactes */}
-<div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
-
-  {/* Search — icône seule sur mobile, barre sur desktop */}
-  {searchOpen ? (
-    <div className="flex-1 glass rounded-xl overflow-hidden shadow-2xl">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <Search className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
-        <input
-          autoFocus
-          value={searchQuery}
-          onChange={e => handleSearch(e.target.value)}
-          onKeyDown={e => e.key === "Escape" && setSearchOpen(false)}
-          placeholder={t.searchPlaces}
-          className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
-        />
-        <button onClick={() => { setSearchOpen(false); setResults([]); setSearchQuery(""); }}>
-          <X className="w-4 h-4 text-[var(--text-muted)]" />
-        </button>
-      </div>
-      {results.length > 0 && (
-        <div className="border-t border-[var(--surface-border)]">
-          {results.map(item => (
-            <button key={item.id} onClick={() => selectResult(item)}
-              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left">
-              <span className="text-sm">{isVisit(item) ? "📍" : "💜"}</span>
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
-                {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  ) : (
-    <button
-      onClick={() => setSearchOpen(true)}
-      className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
-    >
-      <Search className="w-4 h-4" />
-    </button>
-  )}
-
-  {/* Dark mode */}
-  <button
-    onClick={() => setIsDark(!isDark)}
-    className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
-  >
-    {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-  </button>
-
-  {/* Add — desktop only */}
-  <button
-    onClick={onAddVisit}
-    className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
-  >
-    <Plus className="w-4 h-4" />
-    <span>{t.addPlace}</span>
-  </button>
-
-</div>
-
-        {/* Search bar */}
-        <div className="relative flex-1 min-w-0">
-          {searchOpen ? (
-            <div className="glass rounded-2xl overflow-hidden shadow-2xl">
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                <Search className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  onChange={e => handleSearch(e.target.value)}
-                  onKeyDown={e => e.key === "Escape" && setSearchOpen(false)}
-                  placeholder={t.searchPlaces}
-                  className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none min-w-0"
-                />
-                <button onClick={() => { setSearchOpen(false); setResults([]); setSearchQuery(""); }}>
-                  <X className="w-4 h-4 text-[var(--text-muted)]" />
-                </button>
-              </div>
-              {results.length > 0 && (
-                <div className="border-t border-[var(--surface-border)]">
-                  {results.map(item => (
-                    <button key={item.id} onClick={() => selectResult(item)}
-                      className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 transition-colors text-left">
-                      <span>{isVisit(item) ? "📍" : "💜"}</span>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
-                        {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+      {/* Top bar */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+        {searchOpen ? (
+          <div className="flex-1 glass rounded-xl overflow-hidden shadow-2xl">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <Search className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={e => handleSearch(e.target.value)}
+                onKeyDown={e => e.key === "Escape" && setSearchOpen(false)}
+                placeholder={t.searchPlaces}
+                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              />
+              <button onClick={() => { setSearchOpen(false); setResults([]); setSearchQuery(""); }}>
+                <X className="w-4 h-4 text-[var(--text-muted)]" />
+              </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="flex items-center gap-2 glass rounded-xl px-3 py-2.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg w-full"
-            >
-              <Search className="w-4 h-4 flex-shrink-0" />
-              <span className="truncate text-xs">{t.searchPlaces}</span>
-            </button>
-          )}
-        </div>
+            {results.length > 0 && (
+              <div className="border-t border-[var(--surface-border)]">
+                {results.map(item => (
+                  <button key={item.id} onClick={() => selectResult(item)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left">
+                    <span className="text-sm">{isVisit(item) ? "📍" : "💜"}</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
+                      {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        )}
 
-        {/* Dark mode toggle */}
+        {/* Dark mode */}
         <button
           onClick={() => setIsDark(!isDark)}
           className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
@@ -183,7 +118,7 @@ export default function MapControls({
           {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
-        {/* Add button — desktop only */}
+        {/* Add — desktop only */}
         <button
           onClick={onAddVisit}
           className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
@@ -193,7 +128,7 @@ export default function MapControls({
         </button>
       </div>
 
-      {/* Filter bar — scrollable, all visible */}
+      {/* Filter bar — scrollable */}
       <div className="absolute top-14 left-0 right-0 z-10 px-3">
         <div
           className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide"
@@ -215,7 +150,7 @@ export default function MapControls({
         </div>
       </div>
 
-      {/* FAB — mobile floating add button */}
+      {/* FAB mobile */}
       <button
         onClick={onAddVisit}
         className="absolute bottom-24 right-4 z-20 lg:hidden w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-xl shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-transform"
