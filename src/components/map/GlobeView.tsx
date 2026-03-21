@@ -98,11 +98,17 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       // Globe sphere
       const RADIUS = 1;
       const globeGeo = new THREE.SphereGeometry(RADIUS, 64, 64);
-      const globeMat = new THREE.MeshPhongMaterial({
-        color: isDark ? 0x0f2744 : 0x93c5fd,
-        shininess: 15,
-        specular: new THREE.Color(0x333333),
-      });
+      const textureLoader = new THREE.TextureLoader();
+const earthTexture = textureLoader.load(
+  isDark
+    ? "https://unpkg.com/three-globe/example/img/earth-night.jpg"
+    : "https://unpkg.com/three-globe/example/img/earth-day.jpg"
+);
+const globeMat = new THREE.MeshPhongMaterial({
+  map: earthTexture,
+  shininess: 15,
+  specular: new THREE.Color(0x333333),
+});
       const globe = new THREE.Mesh(globeGeo, globeMat);
       scene.add(globe);
 
