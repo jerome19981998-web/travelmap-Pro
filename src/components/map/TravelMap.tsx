@@ -18,8 +18,6 @@ interface Props {
   colorScheme: string;
 }
 
-export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId, colorScheme }: Props) {
-
 function getVisitColor(count: number, scheme: string = "emerald"): string {
   const schemes: Record<string, string[]> = {
     emerald: ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46"],
@@ -33,7 +31,6 @@ function getVisitColor(count: number, scheme: string = "emerald"): string {
   return colors[Math.min(Math.max(count - 1, 0), colors.length - 1)];
 }
 
-// Cache GeoJSON en mémoire pour ne pas re-télécharger
 let geoCache: any = null;
 async function fetchGeoJSON() {
   if (geoCache) return geoCache;
@@ -44,7 +41,7 @@ async function fetchGeoJSON() {
   return geoCache;
 }
 
-export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId }: Props) {
+export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId, colorScheme }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -58,7 +55,6 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addCoords, setAddCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // colorScheme vient des props
   const { t } = useLocale();
 
   // ── Init map ──────────────────────────────────────────────────
@@ -74,7 +70,6 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       maxZoom: 19, subdomains: "abcd",
     }).addTo(map);
 
-    // Country fills UNDER markers
     countryLayerRef.current = L.layerGroup().addTo(map);
     markersLayerRef.current = L.layerGroup().addTo(map);
 
@@ -95,16 +90,9 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     mapRef.current.eachLayer(layer => {
       if (layer instanceof L.TileLayer) mapRef.current!.removeLayer(layer);
     });
-    // Re-add country layer and markers layer after tile swap
-    if (countryLayerRef.current) countryLayerRef.current.addTo(mapRef.current);
-    if (markersLayerRef.current) markersLayerRef.current.addTo(mapRef.current);
-
     const url = isDark
       ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-    mapRef.current.eachLayer(l => {
-      if (l instanceof L.TileLayer) mapRef.current!.removeLayer(l);
-    });
     L.tileLayer(url, { maxZoom: 19, subdomains: "abcd" }).addTo(mapRef.current);
     if (countryLayerRef.current) countryLayerRef.current.addTo(mapRef.current);
     if (markersLayerRef.current) markersLayerRef.current.addTo(mapRef.current);
@@ -137,8 +125,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       // Visited countries — solid fill
       L.geoJSON(geojson, {
         filter: (f: any) => visitedCodes.has(f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase()),
-style: (f: any) => {
-  const code = f?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
+        style: (f: any) => {
+          const code = f?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           const count = countryVisitCounts[code] || 1;
           const color = getVisitColor(count, colorScheme);
           return {
@@ -150,10 +138,10 @@ style: (f: any) => {
           };
         },
         onEachFeature: (f: any, layer: any) => {
-          const code = f.properties?.ISO_A2?.toUpperCase();
+          const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           const count = countryVisitCounts[code] || 0;
           layer.bindTooltip(
-  `<div style="font-weight:700;font-size:13px">${f.properties?.name}</div>
+            `<div style="font-weight:700;font-size:13px">${f.properties?.name}</div>
              <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>`,
             { className: "map-tooltip", sticky: true }
           );
@@ -168,7 +156,7 @@ style: (f: any) => {
       // Wishlist countries — dashed violet outline
       L.geoJSON(geojson, {
         filter: (f: any) => {
-  const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
+          const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           return wishlistCodes.has(code) && !visitedCodes.has(code);
         },
         style: () => ({
@@ -180,6 +168,7 @@ style: (f: any) => {
           dashArray: "5 5",
         }),
       }).addTo(countryLayerRef.current);
+
     }).catch(console.error);
   }, [visits, wishlist, filterMode, colorScheme]);
 
@@ -196,8 +185,6 @@ style: (f: any) => {
       }
     });
 
-    // "countries" mode → no individual markers, countries shown via GeoJSON fills
-    // "wishlist" mode → only wishlist markers
     if (filterMode !== "wishlist") {
       visits.forEach(visit => {
         if (!visit.lat || !visit.lng) return;
@@ -205,8 +192,7 @@ style: (f: any) => {
         const type = visit.place_type;
         const isNeighborhood = type === "neighborhood";
 
-        // Filter by mode
-        if (filterMode === "countries") return; // handled by GeoJSON
+        if (filterMode === "countries") return;
         if (filterMode === "cities" && isNeighborhood) return;
         if (filterMode === "neighborhoods" && !isNeighborhood) return;
 
@@ -261,7 +247,7 @@ style: (f: any) => {
       });
     }
 
-    // Wishlist point markers
+    // Wishlist markers
     if (filterMode === "all" || filterMode === "wishlist") {
       wishlist.forEach(item => {
         if (!item.lat || !item.lng) return;
@@ -342,7 +328,6 @@ style: (f: any) => {
         />
       )}
 
-      {/* Legend */}
       <div className="absolute bottom-10 left-4 z-10 glass rounded-xl px-3 py-2 flex items-center gap-4 text-xs text-[var(--text-secondary)]">
         <span className="font-medium text-[var(--text-muted)]">{t.legend}</span>
         <div className="flex items-center gap-1.5">
