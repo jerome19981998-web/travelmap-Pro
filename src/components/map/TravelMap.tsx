@@ -17,7 +17,7 @@ interface Props {
   userId: string;
 }
 
-function getVisitColor(visitCount: number, scheme: string = "emerald"): string {
+function getVisitColor(count: number, scheme: string = "emerald"): string {
   const schemes: Record<string, string[]> = {
     emerald: ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46"],
     sky:     ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985"],
@@ -27,14 +27,26 @@ function getVisitColor(visitCount: number, scheme: string = "emerald"): string {
     teal:    ["#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e"],
   };
   const colors = schemes[scheme] || schemes.emerald;
-  const idx = Math.min(visitCount - 1, colors.length - 1);
-  return colors[Math.max(0, idx)];
+  return colors[Math.min(Math.max(count - 1, 0), colors.length - 1)];
+}
+
+// Cache GeoJSON en mémoire pour ne pas re-télécharger
+let geoCache: any = null;
+async function fetchGeoJSON() {
+  if (geoCache) return geoCache;
+  const res = await fetch(
+    "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson"
+  );
+  geoCache = await res.json();
+  return geoCache;
 }
 
 export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<L.LayerGroup | null>(null);
+  const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const countryLayerRef = useRef<L.LayerGroup | null>(null);
+
   const [visits, setVisits] = useState(initialVisits);
   const [wishlist, setWishlist] = useState(initialWishlist);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
@@ -46,180 +58,236 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [colorScheme] = useState("emerald");
   const { t } = useLocale();
 
-  // Init map
+  // ── Init map ──────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+
     const map = L.map(mapContainerRef.current, {
-      center: [20, 0], zoom: 2, zoomControl: false, attributionControl: false,
+      center: [20, 0], zoom: 2,
+      zoomControl: false, attributionControl: false,
     });
+
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       maxZoom: 19, subdomains: "abcd",
     }).addTo(map);
-    mapRef.current = map;
-    markersRef.current = L.layerGroup().addTo(map);
+
+    // Country fills UNDER markers
+    countryLayerRef.current = L.layerGroup().addTo(map);
+    markersLayerRef.current = L.layerGroup().addTo(map);
+
     map.on("click", e => {
       setAddCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
       setAddModalOpen(true);
     });
+
     L.control.zoom({ position: "bottomright" }).addTo(map);
+    mapRef.current = map;
+
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Dark/light tile toggle
+  // ── Dark/light tiles ──────────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.eachLayer(layer => {
       if (layer instanceof L.TileLayer) mapRef.current!.removeLayer(layer);
     });
+    // Re-add country layer and markers layer after tile swap
+    if (countryLayerRef.current) countryLayerRef.current.addTo(mapRef.current);
+    if (markersLayerRef.current) markersLayerRef.current.addTo(mapRef.current);
+
     const url = isDark
       ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+    mapRef.current.eachLayer(l => {
+      if (l instanceof L.TileLayer) mapRef.current!.removeLayer(l);
+    });
     L.tileLayer(url, { maxZoom: 19, subdomains: "abcd" }).addTo(mapRef.current);
+    if (countryLayerRef.current) countryLayerRef.current.addTo(mapRef.current);
+    if (markersLayerRef.current) markersLayerRef.current.addTo(mapRef.current);
   }, [isDark]);
 
-const renderMarkers = useCallback(() => {
-  if (!markersRef.current) return;
-  markersRef.current.clearLayers();
+  // ── Country fills (GeoJSON) ───────────────────────────────────
+  useEffect(() => {
+    if (!countryLayerRef.current) return;
+    countryLayerRef.current.clearLayers();
 
-  const countryVisitCounts: Record<string, number> = {};
-  visits.forEach(v => {
-    if (v.country_code) {
-      const code = v.country_code.toUpperCase();
-      countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
-    }
-  });
+    const showCountryFills = filterMode === "all" || filterMode === "countries";
+    if (!showCountryFills || visits.length === 0) return;
 
-  // Groupe les visites par pays pour le filtre "Pays"
-  // → on affiche UN marqueur par pays (le centroïde du pays)
-  const countrySummary: Record<string, { lat: number; lng: number; name: string; count: number; visit: typeof visits[0] }> = {};
-  visits.forEach(v => {
-    if (!v.lat || !v.lng || !v.country_code) return;
-    const code = v.country_code.toUpperCase();
-    if (!countrySummary[code]) {
-      countrySummary[code] = { lat: v.lat, lng: v.lng, name: v.country_name || code, count: 0, visit: v };
-    }
-    countrySummary[code].count++;
-  });
-
-  if (filterMode === "countries") {
-    // Affiche un point par pays visité
-    Object.entries(countrySummary).forEach(([code, { lat, lng, name, count, visit }]) => {
-      const color = getVisitColor(count, colorScheme);
-      const size = 16;
-      const icon = L.divIcon({
-        className: "",
-        html: `<div style="
-          width:${size}px;height:${size}px;border-radius:50%;
-          background:${color};
-          border:2.5px solid rgba(255,255,255,0.6);
-          box-shadow:0 0 0 4px ${color}50, 0 0 18px ${color}80;
-          display:flex;align-items:center;justify-content:center;
-        "></div>`,
-        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-      });
-      const marker = L.marker([lat, lng], { icon });
-      marker.on("click", e => { L.DomEvent.stopPropagation(e); setSelectedVisit(visit); });
-      marker.bindTooltip(
-        `<div style="min-width:120px">
-          <div style="font-weight:700;font-size:13px">${name}</div>
-          <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>
-        </div>`,
-        { className: "map-tooltip", direction: "top", offset: [0, -10] }
-      );
-      markersRef.current!.addLayer(marker);
-    });
-    return;
-  }
-
-  if (filterMode === "wishlist") {
-    wishlist.forEach(item => {
-      if (!item.lat || !item.lng) return;
-      const priorityColor = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
-      const icon = L.divIcon({
-        className: "",
-        html: `<div style="width:11px;height:11px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${priorityColor}45"></div>`,
-        iconSize: [11, 11], iconAnchor: [5, 5],
-      });
-      const marker = L.marker([item.lat, item.lng], { icon });
-      marker.bindTooltip(
-        `<div style="min-width:120px">
-          <div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>
-          ${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}
-        </div>`,
-        { className: "map-tooltip", direction: "top", offset: [0, -10] }
-      );
-      markersRef.current!.addLayer(marker);
-    });
-    return;
-  }
-
-  // Filtre "villes", "quartiers" ou "all" → marqueurs individuels
-  visits.forEach(visit => {
-    if (!visit.lat || !visit.lng) return;
-    const type = visit.place_type;
-    const isNeighborhood = type === "neighborhood";
-    const isCity = type === "city" || type === "landmark";
-
-    if (filterMode === "cities" && isNeighborhood) return;
-    if (filterMode === "neighborhoods" && !isNeighborhood) return;
-
-    const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
-    const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
-    const color = getVisitColor(visitCount, colorScheme);
-    const size = isNeighborhood ? 8 : 12;
-
-    const icon = L.divIcon({
-      className: "",
-      html: coverPhoto
-        ? `<div style="width:38px;height:38px;border-radius:50%;overflow:hidden;border:2.5px solid ${color};box-shadow:0 0 0 3px ${color}50,0 4px 16px rgba(0,0,0,0.6)">
-            <img src="${coverPhoto}" style="width:100%;height:100%;object-fit:cover"/>
-          </div>`
-        : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${color}45,0 0 14px ${color}70"></div>`,
-      iconSize: coverPhoto ? [38, 38] : [size, size],
-      iconAnchor: coverPhoto ? [19, 19] : [size / 2, size / 2],
+    const countryVisitCounts: Record<string, number> = {};
+    visits.forEach(v => {
+      if (v.country_code) {
+        const code = v.country_code.toUpperCase();
+        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+      }
     });
 
-    const marker = L.marker([visit.lat, visit.lng], { icon });
-    marker.on("click", e => { L.DomEvent.stopPropagation(e); setSelectedVisit(visit); });
-
-    const stars = visit.rating ? "★".repeat(visit.rating) + "☆".repeat(5 - visit.rating) : null;
-    marker.bindTooltip(
-      `<div style="min-width:130px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:3px">${visit.place_name}</div>
-        ${visit.country_name ? `<div style="font-size:11px;opacity:0.65">${visit.country_name}</div>` : ""}
-        ${visit.visited_at ? `<div style="font-size:11px;opacity:0.55;margin-top:4px">${new Date(visit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })}</div>` : ""}
-        ${stars ? `<div style="font-size:12px;color:#f59e0b;margin-top:3px">${stars}</div>` : ""}
-      </div>`,
-      { className: "map-tooltip", direction: "top", offset: [0, -10] }
+    const visitedCodes = new Set(Object.keys(countryVisitCounts));
+    const wishlistCodes = new Set(
+      wishlist.map(w => w.country_code?.toUpperCase()).filter(Boolean) as string[]
     );
-    markersRef.current!.addLayer(marker);
-  });
 
-  // Wishlist markers sur "all"
-  if (filterMode === "all") {
-    wishlist.forEach(item => {
-      if (!item.lat || !item.lng) return;
-      const priorityColor = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
-      const icon = L.divIcon({
-        className: "",
-        html: `<div style="width:10px;height:10px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.4);box-shadow:0 0 0 3px ${priorityColor}40"></div>`,
-        iconSize: [10, 10], iconAnchor: [5, 5],
-      });
-      const marker = L.marker([item.lat, item.lng], { icon });
-      marker.bindTooltip(
-        `<div style="min-width:120px">
-          <div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>
-          ${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}
-        </div>`,
-        { className: "map-tooltip", direction: "top", offset: [0, -10] }
-      );
-      markersRef.current!.addLayer(marker);
+    fetchGeoJSON().then(geojson => {
+      if (!countryLayerRef.current) return;
+
+      // Visited countries — solid fill
+      L.geoJSON(geojson, {
+        filter: (f: any) => visitedCodes.has(f.properties?.ISO_A2?.toUpperCase()),
+        style: (f: any) => {
+          const code = f?.properties?.ISO_A2?.toUpperCase();
+          const count = countryVisitCounts[code] || 1;
+          const color = getVisitColor(count, colorScheme);
+          return {
+            fillColor: color,
+            fillOpacity: 0.45,
+            color: color,
+            weight: 1.5,
+            opacity: 0.7,
+          };
+        },
+        onEachFeature: (f: any, layer: any) => {
+          const code = f.properties?.ISO_A2?.toUpperCase();
+          const count = countryVisitCounts[code] || 0;
+          layer.bindTooltip(
+            `<div style="font-weight:700;font-size:13px">${f.properties?.ADMIN}</div>
+             <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>`,
+            { className: "map-tooltip", sticky: true }
+          );
+          layer.on("click", (e: any) => {
+            L.DomEvent.stopPropagation(e);
+            const v = visits.find(v => v.country_code?.toUpperCase() === code);
+            if (v) setSelectedVisit(v);
+          });
+        },
+      }).addTo(countryLayerRef.current);
+
+      // Wishlist countries — dashed violet outline
+      L.geoJSON(geojson, {
+        filter: (f: any) => {
+          const code = f.properties?.ISO_A2?.toUpperCase();
+          return wishlistCodes.has(code) && !visitedCodes.has(code);
+        },
+        style: () => ({
+          fillColor: "#8b5cf6",
+          fillOpacity: 0.12,
+          color: "#8b5cf6",
+          weight: 1.5,
+          opacity: 0.5,
+          dashArray: "5 5",
+        }),
+      }).addTo(countryLayerRef.current);
+    }).catch(console.error);
+  }, [visits, wishlist, filterMode, colorScheme]);
+
+  // ── City / neighborhood markers ───────────────────────────────
+  const renderMarkers = useCallback(() => {
+    if (!markersLayerRef.current) return;
+    markersLayerRef.current.clearLayers();
+
+    const countryVisitCounts: Record<string, number> = {};
+    visits.forEach(v => {
+      if (v.country_code) {
+        const code = v.country_code.toUpperCase();
+        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+      }
     });
-  }
-}, [visits, wishlist, filterMode, colorScheme]);
+
+    // "countries" mode → no individual markers, countries shown via GeoJSON fills
+    // "wishlist" mode → only wishlist markers
+    if (filterMode !== "wishlist") {
+      visits.forEach(visit => {
+        if (!visit.lat || !visit.lng) return;
+
+        const type = visit.place_type;
+        const isNeighborhood = type === "neighborhood";
+
+        // Filter by mode
+        if (filterMode === "countries") return; // handled by GeoJSON
+        if (filterMode === "cities" && isNeighborhood) return;
+        if (filterMode === "neighborhoods" && !isNeighborhood) return;
+
+        const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url
+                        || visit.visit_photos?.[0]?.url;
+        const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
+        const color = getVisitColor(visitCount, colorScheme);
+        const size = isNeighborhood ? 8 : 12;
+
+        const icon = L.divIcon({
+          className: "",
+          html: coverPhoto
+            ? `<div style="width:38px;height:38px;border-radius:50%;overflow:hidden;
+                border:2.5px solid ${color};
+                box-shadow:0 0 0 3px ${color}50,0 4px 16px rgba(0,0,0,0.6)">
+                <img src="${coverPhoto}" style="width:100%;height:100%;object-fit:cover"/>
+              </div>`
+            : `<div style="width:${size}px;height:${size}px;border-radius:50%;
+                background:${color};
+                border:2px solid rgba(255,255,255,0.5);
+                box-shadow:0 0 0 3px ${color}45,0 0 14px ${color}70">
+              </div>`,
+          iconSize:   coverPhoto ? [38, 38] : [size, size],
+          iconAnchor: coverPhoto ? [19, 19] : [size / 2, size / 2],
+        });
+
+        const marker = L.marker([visit.lat, visit.lng], { icon });
+        marker.on("click", e => {
+          L.DomEvent.stopPropagation(e);
+          setSelectedVisit(visit);
+        });
+
+        const stars = visit.rating
+          ? "★".repeat(visit.rating) + "☆".repeat(5 - visit.rating)
+          : null;
+
+        marker.bindTooltip(
+          `<div style="min-width:130px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:3px">${visit.place_name}</div>
+            ${visit.country_name ? `<div style="font-size:11px;opacity:0.65">${visit.country_name}</div>` : ""}
+            ${visit.visited_at
+              ? `<div style="font-size:11px;opacity:0.55;margin-top:4px">
+                   ${new Date(visit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })}
+                 </div>`
+              : ""}
+            ${stars ? `<div style="font-size:12px;color:#f59e0b;margin-top:3px">${stars}</div>` : ""}
+          </div>`,
+          { className: "map-tooltip", direction: "top", offset: [0, -10] }
+        );
+
+        markersLayerRef.current!.addLayer(marker);
+      });
+    }
+
+    // Wishlist point markers
+    if (filterMode === "all" || filterMode === "wishlist") {
+      wishlist.forEach(item => {
+        if (!item.lat || !item.lng) return;
+        const pc = item.priority === "high" ? "#ef4444"
+                 : item.priority === "low"  ? "#6b7280"
+                 : "#8b5cf6";
+        const icon = L.divIcon({
+          className: "",
+          html: `<div style="width:10px;height:10px;border-radius:50%;
+            background:${pc};border:2px solid rgba(255,255,255,0.5);
+            box-shadow:0 0 0 3px ${pc}40"></div>`,
+          iconSize: [10, 10], iconAnchor: [5, 5],
+        });
+        const marker = L.marker([item.lat, item.lng], { icon });
+        marker.bindTooltip(
+          `<div style="min-width:120px">
+            <div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>
+            ${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}
+          </div>`,
+          { className: "map-tooltip", direction: "top", offset: [0, -10] }
+        );
+        markersLayerRef.current!.addLayer(marker);
+      });
+    }
+  }, [visits, wishlist, filterMode, colorScheme]);
 
   useEffect(() => { renderMarkers(); }, [renderMarkers]);
 
+  // ── Data refresh ──────────────────────────────────────────────
   const handleVisitAdded = async () => {
     const supabase = createClient();
     const { data } = await supabase
@@ -245,12 +313,12 @@ const renderMarkers = useCallback(() => {
       <div ref={mapContainerRef} className="absolute inset-0 z-0" />
 
       <MapControls
-        filterMode={filterMode}    setFilterMode={setFilterMode}
-        isDark={isDark}            setIsDark={setIsDark}
-        visits={visits}            wishlist={wishlist}
+        filterMode={filterMode}   setFilterMode={setFilterMode}
+        isDark={isDark}           setIsDark={setIsDark}
+        visits={visits}           wishlist={wishlist}
         onFlyTo={flyToVisit}
         onAddVisit={() => { setAddCoords(null); setAddModalOpen(true); }}
-        searchQuery={searchQuery}  setSearchQuery={setSearchQuery}
+        searchQuery={searchQuery} setSearchQuery={setSearchQuery}
       />
 
       {selectedVisit && (
@@ -264,8 +332,7 @@ const renderMarkers = useCallback(() => {
 
       {addModalOpen && (
         <AddVisitModal
-          coords={addCoords}
-          userId={userId}
+          coords={addCoords} userId={userId}
           onClose={() => { setAddModalOpen(false); setAddCoords(null); }}
           onVisitAdded={handleVisitAdded}
           onWishlistAdded={handleWishlistAdded}
