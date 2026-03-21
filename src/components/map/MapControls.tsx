@@ -55,7 +55,7 @@ export default function MapControls({
 
   return (
     <>
-      <div className="absolute top-4 left-4 right-4 z-10 flex items-center gap-3">
+      <div className="absolute top-4 left-4 right-36 z-10 flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           {searchOpen ? (
             <div className="glass rounded-2xl overflow-hidden shadow-2xl">
