@@ -94,12 +94,14 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
   const getCountryCode = (r: NominatimResult) => (r.address.country_code || "").toUpperCase();
   const getContinent = (r: NominatimResult) => CONTINENTS[(r.address.country_code || "").toLowerCase()] || "Unknown";
   const getPlaceType = (r: NominatimResult): string => {
-    const t = r.type;
-    if (["country", "state", "nation"].includes(t)) return "country";
-    if (["city", "town", "village", "municipality"].includes(t)) return "city";
-    if (["suburb", "quarter", "neighbourhood"].includes(t)) return "neighborhood";
-    return "landmark";
-  };
+  const t = r.type;
+  const name = getPlaceName(r).toLowerCase();
+  const countryName = getCountryName(r).toLowerCase();
+  if (name === countryName || ["country", "state", "nation", "administrative"].includes(t)) return "country";
+  if (["suburb", "quarter", "neighbourhood", "district"].includes(t)) return "neighborhood";
+  if (["city", "town", "village", "municipality", "borough"].includes(t)) return "city";
+  return "landmark";
+};
 
   const handleSave = async () => {
     const place = selected || (results[0] || null);
