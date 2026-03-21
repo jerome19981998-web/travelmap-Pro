@@ -77,141 +77,146 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     L.tileLayer(url, { maxZoom: 19, subdomains: "abcd" }).addTo(mapRef.current);
   }, [isDark]);
 
-  const renderMarkers = useCallback(() => {
-    if (!markersRef.current) return;
-    markersRef.current.clearLayers();
+const renderMarkers = useCallback(() => {
+  if (!markersRef.current) return;
+  markersRef.current.clearLayers();
 
-    // ─── Filter logic ───────────────────────────────────────────
-    // "countries" → show country-level markers (no fill, just dots)
-    // "cities"    → show city/landmark markers only
-    // "neighborhoods" → show neighborhood markers only
-    // "wishlist"  → show wishlist markers only
-    // "all"       → show everything
+  const countryVisitCounts: Record<string, number> = {};
+  visits.forEach(v => {
+    if (v.country_code) {
+      const code = v.country_code.toUpperCase();
+      countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+    }
+  });
 
-    const showCountries     = filterMode === "all" || filterMode === "countries";
-    const showCities        = filterMode === "all" || filterMode === "cities";
-    const showNeighborhoods = filterMode === "all" || filterMode === "neighborhoods";
-    const showWishlist      = filterMode === "all" || filterMode === "wishlist";
+  // Groupe les visites par pays pour le filtre "Pays"
+  // → on affiche UN marqueur par pays (le centroïde du pays)
+  const countrySummary: Record<string, { lat: number; lng: number; name: string; count: number; visit: typeof visits[0] }> = {};
+  visits.forEach(v => {
+    if (!v.lat || !v.lng || !v.country_code) return;
+    const code = v.country_code.toUpperCase();
+    if (!countrySummary[code]) {
+      countrySummary[code] = { lat: v.lat, lng: v.lng, name: v.country_name || code, count: 0, visit: v };
+    }
+    countrySummary[code].count++;
+  });
 
-    // Count visits per country for gradient color
-    const countryVisitCounts: Record<string, number> = {};
-    visits.forEach(v => {
-      if (v.country_code) {
-        const code = v.country_code.toUpperCase();
-        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
-      }
-    });
-
-    // ─── Visited place markers ───────────────────────────────────
-    visits.forEach(visit => {
-      if (!visit.lat || !visit.lng) return;
-
-      const type = visit.place_type;
-      const isNeighborhood = type === "neighborhood";
-const isCity         = type === "city" || type === "landmark";
-const isCountry      = !isCity && !isNeighborhood; // tout le reste = pays
-
-// Apply filter — si aucun filtre spécifique, on montre tout
-if (filterMode === "cities" && type === "neighborhood") return;
-if (filterMode === "neighborhoods" && type !== "neighborhood") return;
-if (filterMode === "wishlist") return;
-      const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url
-                      || visit.visit_photos?.[0]?.url;
-
-      const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
-      const color = getVisitColor(visitCount, colorScheme);
-
-      // Size varies by type
-      const size = isCountry ? 14 : isNeighborhood ? 8 : 12;
-
+  if (filterMode === "countries") {
+    // Affiche un point par pays visité
+    Object.entries(countrySummary).forEach(([code, { lat, lng, name, count, visit }]) => {
+      const color = getVisitColor(count, colorScheme);
+      const size = 16;
       const icon = L.divIcon({
         className: "",
-        html: coverPhoto
-          ? `<div style="width:38px;height:38px;border-radius:50%;overflow:hidden;
-                border:2.5px solid ${color};
-                box-shadow:0 0 0 3px ${color}50, 0 4px 16px rgba(0,0,0,0.6)">
-               <img src="${coverPhoto}" style="width:100%;height:100%;object-fit:cover"/>
-             </div>`
-          : `<div style="width:${size}px;height:${size}px;border-radius:50%;
-                background:${color};
-                border:2px solid rgba(255,255,255,0.5);
-                box-shadow:0 0 0 3px ${color}45, 0 0 14px ${color}70">
-             </div>`,
-        iconSize:   coverPhoto ? [38, 38] : [size, size],
-        iconAnchor: coverPhoto ? [19, 19] : [size / 2, size / 2],
+        html: `<div style="
+          width:${size}px;height:${size}px;border-radius:50%;
+          background:${color};
+          border:2.5px solid rgba(255,255,255,0.6);
+          box-shadow:0 0 0 4px ${color}50, 0 0 18px ${color}80;
+          display:flex;align-items:center;justify-content:center;
+        "></div>`,
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
       });
-
-      const marker = L.marker([visit.lat, visit.lng], { icon });
-      marker.on("click", e => {
-        L.DomEvent.stopPropagation(e);
-        setSelectedVisit(visit);
-      });
-
-      const stars = visit.rating
-        ? "★".repeat(visit.rating) + "☆".repeat(5 - visit.rating)
-        : null;
-
+      const marker = L.marker([lat, lng], { icon });
+      marker.on("click", e => { L.DomEvent.stopPropagation(e); setSelectedVisit(visit); });
       marker.bindTooltip(
-        `<div style="min-width:130px;padding:2px 0">
-           <div style="font-weight:700;font-size:13px;margin-bottom:3px">${visit.place_name}</div>
-           ${visit.country_name
-             ? `<div style="font-size:11px;opacity:0.65">${visit.country_name}</div>`
-             : ""}
-           ${visit.visited_at
-             ? `<div style="font-size:11px;opacity:0.55;margin-top:4px">
-                  ${new Date(visit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })}
-                </div>`
-             : ""}
-           ${stars
-             ? `<div style="font-size:12px;color:#f59e0b;margin-top:3px">${stars}</div>`
-             : ""}
-         </div>`,
+        `<div style="min-width:120px">
+          <div style="font-weight:700;font-size:13px">${name}</div>
+          <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>
+        </div>`,
         { className: "map-tooltip", direction: "top", offset: [0, -10] }
       );
-
       markersRef.current!.addLayer(marker);
     });
+    return;
+  }
 
-    // ─── Wishlist markers ────────────────────────────────────────
-    if (showWishlist) {
-      wishlist.forEach(item => {
-        if (!item.lat || !item.lng) return;
-
-        const priorityColor =
-          item.priority === "high" ? "#ef4444"
-          : item.priority === "low"  ? "#6b7280"
-          : "#8b5cf6";
-
-        const icon = L.divIcon({
-          className: "",
-          html: `<div style="
-            width:11px;height:11px;border-radius:50%;
-            background:${priorityColor};
-            border:2px solid rgba(255,255,255,0.5);
-            box-shadow:0 0 0 3px ${priorityColor}45, 0 0 12px ${priorityColor}60
-          "></div>`,
-          iconSize: [11, 11], iconAnchor: [5, 5],
-        });
-
-        const marker = L.marker([item.lat, item.lng], { icon });
-        marker.bindTooltip(
-          `<div style="min-width:120px;padding:2px 0">
-             <div style="font-weight:700;font-size:13px;margin-bottom:3px">💜 ${item.place_name}</div>
-             ${item.country_name
-               ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>`
-               : ""}
-             <div style="
-               font-size:10px;margin-top:5px;padding:2px 7px;border-radius:20px;
-               display:inline-block;
-               background:${priorityColor}30;color:${priorityColor}
-             ">${item.priority}</div>
-           </div>`,
-          { className: "map-tooltip", direction: "top", offset: [0, -10] }
-        );
-        markersRef.current!.addLayer(marker);
+  if (filterMode === "wishlist") {
+    wishlist.forEach(item => {
+      if (!item.lat || !item.lng) return;
+      const priorityColor = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="width:11px;height:11px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${priorityColor}45"></div>`,
+        iconSize: [11, 11], iconAnchor: [5, 5],
       });
-    }
-  }, [visits, wishlist, filterMode, colorScheme]);
+      const marker = L.marker([item.lat, item.lng], { icon });
+      marker.bindTooltip(
+        `<div style="min-width:120px">
+          <div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>
+          ${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}
+        </div>`,
+        { className: "map-tooltip", direction: "top", offset: [0, -10] }
+      );
+      markersRef.current!.addLayer(marker);
+    });
+    return;
+  }
+
+  // Filtre "villes", "quartiers" ou "all" → marqueurs individuels
+  visits.forEach(visit => {
+    if (!visit.lat || !visit.lng) return;
+    const type = visit.place_type;
+    const isNeighborhood = type === "neighborhood";
+    const isCity = type === "city" || type === "landmark";
+
+    if (filterMode === "cities" && isNeighborhood) return;
+    if (filterMode === "neighborhoods" && !isNeighborhood) return;
+
+    const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
+    const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
+    const color = getVisitColor(visitCount, colorScheme);
+    const size = isNeighborhood ? 8 : 12;
+
+    const icon = L.divIcon({
+      className: "",
+      html: coverPhoto
+        ? `<div style="width:38px;height:38px;border-radius:50%;overflow:hidden;border:2.5px solid ${color};box-shadow:0 0 0 3px ${color}50,0 4px 16px rgba(0,0,0,0.6)">
+            <img src="${coverPhoto}" style="width:100%;height:100%;object-fit:cover"/>
+          </div>`
+        : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${color}45,0 0 14px ${color}70"></div>`,
+      iconSize: coverPhoto ? [38, 38] : [size, size],
+      iconAnchor: coverPhoto ? [19, 19] : [size / 2, size / 2],
+    });
+
+    const marker = L.marker([visit.lat, visit.lng], { icon });
+    marker.on("click", e => { L.DomEvent.stopPropagation(e); setSelectedVisit(visit); });
+
+    const stars = visit.rating ? "★".repeat(visit.rating) + "☆".repeat(5 - visit.rating) : null;
+    marker.bindTooltip(
+      `<div style="min-width:130px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:3px">${visit.place_name}</div>
+        ${visit.country_name ? `<div style="font-size:11px;opacity:0.65">${visit.country_name}</div>` : ""}
+        ${visit.visited_at ? `<div style="font-size:11px;opacity:0.55;margin-top:4px">${new Date(visit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })}</div>` : ""}
+        ${stars ? `<div style="font-size:12px;color:#f59e0b;margin-top:3px">${stars}</div>` : ""}
+      </div>`,
+      { className: "map-tooltip", direction: "top", offset: [0, -10] }
+    );
+    markersRef.current!.addLayer(marker);
+  });
+
+  // Wishlist markers sur "all"
+  if (filterMode === "all") {
+    wishlist.forEach(item => {
+      if (!item.lat || !item.lng) return;
+      const priorityColor = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="width:10px;height:10px;border-radius:50%;background:${priorityColor};border:2px solid rgba(255,255,255,0.4);box-shadow:0 0 0 3px ${priorityColor}40"></div>`,
+        iconSize: [10, 10], iconAnchor: [5, 5],
+      });
+      const marker = L.marker([item.lat, item.lng], { icon });
+      marker.bindTooltip(
+        `<div style="min-width:120px">
+          <div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>
+          ${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}
+        </div>`,
+        { className: "map-tooltip", direction: "top", offset: [0, -10] }
+      );
+      markersRef.current!.addLayer(marker);
+    });
+  }
+}, [visits, wishlist, filterMode, colorScheme]);
 
   useEffect(() => { renderMarkers(); }, [renderMarkers]);
 
