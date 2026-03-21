@@ -89,7 +89,10 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
     }
   };
 
-  const getPlaceName = (r: NominatimResult) => r.display_name.split(",")[0].trim();
+  const getPlaceName = (r: NominatimResult) => {
+  if (!r?.display_name) return r?.name || "Unknown";
+  return r.display_name.split(",")[0].trim();
+};
   const getCountryName = (r: NominatimResult) => r.address.country || "";
   const getCountryCode = (r: NominatimResult) => (r.address.country_code || "").toUpperCase();
   const getContinent = (r: NominatimResult) => CONTINENTS[(r.address.country_code || "").toLowerCase()] || "Unknown";
