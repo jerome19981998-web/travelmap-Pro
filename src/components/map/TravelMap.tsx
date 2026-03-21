@@ -18,6 +18,8 @@ interface Props {
   colorScheme: string;
 }
 
+export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId, colorScheme }: Props) {
+
 function getVisitColor(count: number, scheme: string = "emerald"): string {
   const schemes: Record<string, string[]> = {
     emerald: ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46"],
