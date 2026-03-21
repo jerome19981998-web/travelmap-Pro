@@ -112,10 +112,9 @@ const isCity         = type === "city" || type === "landmark";
 const isCountry      = !isCity && !isNeighborhood; // tout le reste = pays
 
 // Apply filter — si aucun filtre spécifique, on montre tout
-if (filterMode === "countries"     && (isCity || isNeighborhood)) return;
-if (filterMode === "cities"        && !isCity)                    return;
-if (filterMode === "neighborhoods" && !isNeighborhood)            return;
-if (filterMode === "wishlist")                                     return;
+if (filterMode === "cities" && type === "neighborhood") return;
+if (filterMode === "neighborhoods" && type !== "neighborhood") return;
+if (filterMode === "wishlist") return;
       const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url
                       || visit.visit_photos?.[0]?.url;
 
