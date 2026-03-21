@@ -68,8 +68,68 @@ export default function MapControls({
 
   return (
     <>
-      {/* Top bar — search + dark mode + add (desktop) */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+      {/* Top bar — icônes compactes */}
+<div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+
+  {/* Search — icône seule sur mobile, barre sur desktop */}
+  {searchOpen ? (
+    <div className="flex-1 glass rounded-xl overflow-hidden shadow-2xl">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Search className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+        <input
+          autoFocus
+          value={searchQuery}
+          onChange={e => handleSearch(e.target.value)}
+          onKeyDown={e => e.key === "Escape" && setSearchOpen(false)}
+          placeholder={t.searchPlaces}
+          className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+        />
+        <button onClick={() => { setSearchOpen(false); setResults([]); setSearchQuery(""); }}>
+          <X className="w-4 h-4 text-[var(--text-muted)]" />
+        </button>
+      </div>
+      {results.length > 0 && (
+        <div className="border-t border-[var(--surface-border)]">
+          {results.map(item => (
+            <button key={item.id} onClick={() => selectResult(item)}
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left">
+              <span className="text-sm">{isVisit(item) ? "📍" : "💜"}</span>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
+                {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : (
+    <button
+      onClick={() => setSearchOpen(true)}
+      className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
+    >
+      <Search className="w-4 h-4" />
+    </button>
+  )}
+
+  {/* Dark mode */}
+  <button
+    onClick={() => setIsDark(!isDark)}
+    className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
+  >
+    {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+  </button>
+
+  {/* Add — desktop only */}
+  <button
+    onClick={onAddVisit}
+    className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
+  >
+    <Plus className="w-4 h-4" />
+    <span>{t.addPlace}</span>
+  </button>
+
+</div>
 
         {/* Search bar */}
         <div className="relative flex-1 min-w-0">
