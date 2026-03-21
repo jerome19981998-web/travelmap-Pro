@@ -133,9 +133,9 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
 
       // Visited countries — solid fill
       L.geoJSON(geojson, {
-        filter: (f: any) => visitedCodes.has(f.properties?.ISO_A2?.toUpperCase()),
-        style: (f: any) => {
-          const code = f?.properties?.ISO_A2?.toUpperCase();
+        filter: (f: any) => visitedCodes.has(f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase()),
+style: (f: any) => {
+  const code = f?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           const count = countryVisitCounts[code] || 1;
           const color = getVisitColor(count, colorScheme);
           return {
@@ -150,7 +150,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           const code = f.properties?.ISO_A2?.toUpperCase();
           const count = countryVisitCounts[code] || 0;
           layer.bindTooltip(
-            `<div style="font-weight:700;font-size:13px">${f.properties?.ADMIN}</div>
+  `<div style="font-weight:700;font-size:13px">${f.properties?.name}</div>
              <div style="font-size:11px;opacity:0.7;margin-top:2px">${count} visite${count > 1 ? "s" : ""}</div>`,
             { className: "map-tooltip", sticky: true }
           );
@@ -165,7 +165,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       // Wishlist countries — dashed violet outline
       L.geoJSON(geojson, {
         filter: (f: any) => {
-          const code = f.properties?.ISO_A2?.toUpperCase();
+  const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           return wishlistCodes.has(code) && !visitedCodes.has(code);
         },
         style: () => ({
