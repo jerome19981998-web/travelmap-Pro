@@ -7,11 +7,11 @@ import type { Visit, WishlistItem } from "@/types/database";
 import MapControls, { type FilterMode } from "./MapControls";
 import VisitPanel from "./VisitPanel";
 import AddVisitModal from "./AddVisitModal";
-import GlobeView from "./GlobeView";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 import { useLocale } from "@/hooks/useLocale";
 import { Globe, Map } from "lucide-react";
+import GlobeView from "./GlobeView";
 
 interface Props {
   visits: (Visit & { visit_photos: { url: string; is_cover: boolean }[] })[];
@@ -41,6 +41,15 @@ async function fetchGeoJSON() {
   return geoCache;
 }
 
+// Resolve effective filter based on zoom level for "auto" mode
+function resolveFilter(filterMode: FilterMode, zoom: number): "countries" | "cities" | "neighborhoods" | "wishlist" {
+  if (filterMode === "wishlist") return "wishlist";
+  if (filterMode !== "auto") return filterMode;
+  if (zoom <= 4) return "countries";
+  if (zoom <= 8) return "cities";
+  return "neighborhoods";
+}
+
 export default function TravelMap({ visits: initialVisits, wishlist: initialWishlist, userId, colorScheme }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -49,7 +58,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
 
   const [visits, setVisits] = useState(initialVisits);
   const [wishlist, setWishlist] = useState(initialWishlist);
-  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [filterMode, setFilterMode] = useState<FilterMode>("auto");
+  const [zoom, setZoom] = useState(2);
   const [isDark, setIsDark] = useState(true);
   const [isGlobe, setIsGlobe] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<(typeof visits)[0] | null>(null);
@@ -58,6 +68,9 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [searchQuery, setSearchQuery] = useState("");
   const { t } = useLocale();
 
+  const effectiveFilter = resolveFilter(filterMode, zoom);
+
+  // Init map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     const map = L.map(mapContainerRef.current, {
@@ -72,11 +85,13 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       setAddCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
       setAddModalOpen(true);
     });
+    map.on("zoomend", () => setZoom(map.getZoom()));
     L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
+  // Dark/light tiles
   useEffect(() => {
     if (!mapRef.current) return;
     mapRef.current.eachLayer(layer => {
@@ -90,10 +105,12 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     if (markersLayerRef.current) markersLayerRef.current.addTo(mapRef.current);
   }, [isDark]);
 
+  // Country fills (GeoJSON)
   useEffect(() => {
     if (!countryLayerRef.current) return;
     countryLayerRef.current.clearLayers();
-    const showCountryFills = filterMode === "all" || filterMode === "countries";
+
+    const showCountryFills = effectiveFilter === "countries";
     if (!showCountryFills || visits.length === 0) return;
 
     const countryVisitCounts: Record<string, number> = {};
@@ -108,13 +125,14 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
 
     fetchGeoJSON().then(geojson => {
       if (!countryLayerRef.current) return;
+
       L.geoJSON(geojson, {
         filter: (f: any) => visitedCodes.has(f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase()),
         style: (f: any) => {
           const code = f?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
           const count = countryVisitCounts[code] || 1;
           const color = getVisitColor(count, colorScheme);
-          return { fillColor: color, fillOpacity: 0.45, color: color, weight: 1.5, opacity: 0.7 };
+          return { fillColor: color, fillOpacity: 0.45, color, weight: 1.5, opacity: 0.7 };
         },
         onEachFeature: (f: any, layer: any) => {
           const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
@@ -140,11 +158,13 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         style: () => ({ fillColor: "#8b5cf6", fillOpacity: 0.12, color: "#8b5cf6", weight: 1.5, opacity: 0.5, dashArray: "5 5" }),
       }).addTo(countryLayerRef.current);
     }).catch(console.error);
-  }, [visits, wishlist, filterMode, colorScheme]);
+  }, [visits, wishlist, effectiveFilter, colorScheme]);
 
+  // City / neighborhood markers
   const renderMarkers = useCallback(() => {
     if (!markersLayerRef.current) return;
     markersLayerRef.current.clearLayers();
+
     const countryVisitCounts: Record<string, number> = {};
     visits.forEach(v => {
       if (v.country_code) {
@@ -153,14 +173,14 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       }
     });
 
-    if (filterMode !== "wishlist") {
+    if (effectiveFilter !== "wishlist") {
       visits.forEach(visit => {
         if (!visit.lat || !visit.lng) return;
         const type = visit.place_type;
         const isNeighborhood = type === "neighborhood";
-        if (filterMode === "countries") return;
-        if (filterMode === "cities" && isNeighborhood) return;
-        if (filterMode === "neighborhoods" && !isNeighborhood) return;
+        if (effectiveFilter === "countries") return;
+        if (effectiveFilter === "cities" && isNeighborhood) return;
+        if (effectiveFilter === "neighborhoods" && !isNeighborhood) return;
 
         const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
         const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
@@ -171,13 +191,19 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           className: "",
           html: coverPhoto
             ? `<div style="width:38px;height:38px;border-radius:50%;overflow:hidden;border:2.5px solid ${color};box-shadow:0 0 0 3px ${color}50,0 4px 16px rgba(0,0,0,0.6)"><img src="${coverPhoto}" style="width:100%;height:100%;object-fit:cover"/></div>`
-            : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${color}45,0 0 14px ${color}70"></div>`,
+            : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${color}45,0 0 14px ${color}70;animation:pulse-marker 2s ease-in-out infinite;"></div>`,
           iconSize: coverPhoto ? [38, 38] : [size, size],
           iconAnchor: coverPhoto ? [19, 19] : [size / 2, size / 2],
         });
 
         const marker = L.marker([visit.lat, visit.lng], { icon });
-        marker.on("click", e => { L.DomEvent.stopPropagation(e); setSelectedVisit(visit); });
+        marker.on("click", e => {
+          L.DomEvent.stopPropagation(e);
+          setSelectedVisit(visit);
+          // Haptic feedback on mobile
+          if (navigator.vibrate) navigator.vibrate(30);
+        });
+
         const stars = visit.rating ? "★".repeat(visit.rating) + "☆".repeat(5 - visit.rating) : null;
         marker.bindTooltip(
           `<div style="min-width:130px">
@@ -192,24 +218,32 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       });
     }
 
-    if (filterMode === "all" || filterMode === "wishlist") {
-      wishlist.forEach(item => {
-        if (!item.lat || !item.lng) return;
-        const pc = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
-        const icon = L.divIcon({
-          className: "",
-          html: `<div style="width:10px;height:10px;border-radius:50%;background:${pc};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${pc}40"></div>`,
-          iconSize: [10, 10], iconAnchor: [5, 5],
+    // Wishlist markers
+    if (effectiveFilter === "countries" || effectiveFilter === "cities" || effectiveFilter === "neighborhoods" || effectiveFilter === "wishlist") {
+      const showWishlist = effectiveFilter === "wishlist" ||
+        filterMode === "auto" ||
+        filterMode === "wishlist";
+
+      if (showWishlist || effectiveFilter !== "countries") {
+        wishlist.forEach(item => {
+          if (!item.lat || !item.lng) return;
+          if (effectiveFilter !== "wishlist" && filterMode !== "auto") return;
+          const pc = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
+          const icon = L.divIcon({
+            className: "",
+            html: `<div style="width:10px;height:10px;border-radius:50%;background:${pc};border:2px solid rgba(255,255,255,0.5);box-shadow:0 0 0 3px ${pc}40"></div>`,
+            iconSize: [10, 10], iconAnchor: [5, 5],
+          });
+          const marker = L.marker([item.lat, item.lng], { icon });
+          marker.bindTooltip(
+            `<div style="min-width:120px"><div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}</div>`,
+            { className: "map-tooltip", direction: "top", offset: [0, -10] }
+          );
+          markersLayerRef.current!.addLayer(marker);
         });
-        const marker = L.marker([item.lat, item.lng], { icon });
-        marker.bindTooltip(
-          `<div style="min-width:120px"><div style="font-weight:700;font-size:13px">💜 ${item.place_name}</div>${item.country_name ? `<div style="font-size:11px;opacity:0.65">${item.country_name}</div>` : ""}</div>`,
-          { className: "map-tooltip", direction: "top", offset: [0, -10] }
-        );
-        markersLayerRef.current!.addLayer(marker);
-      });
+      }
     }
-  }, [visits, wishlist, filterMode, colorScheme]);
+  }, [visits, wishlist, effectiveFilter, filterMode, colorScheme]);
 
   useEffect(() => { renderMarkers(); }, [renderMarkers]);
 
@@ -218,6 +252,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     const { data } = await supabase.from("visits").select("*, visit_photos(*)").eq("user_id", userId).order("visited_at", { ascending: false });
     if (data) setVisits(data as typeof visits);
     toast.success("✈️ " + t.saveVisit);
+    if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
   };
 
   const handleWishlistAdded = async () => {
@@ -234,8 +269,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   return (
     <div className="relative w-full h-full bg-[var(--map-bg)]">
 
-      {/* Globe/Map toggle — toujours visible en haut à droite */}
-<div className="absolute top-4 right-4 z-[9999] flex items-center glass rounded-xl overflow-hidden border border-[var(--surface-border)] shadow-lg" style={{pointerEvents: "all", position: "absolute"}}>
+      {/* Globe/Map toggle */}
+      <div className="absolute top-4 right-4 z-[9999] flex items-center glass rounded-xl overflow-hidden border border-[var(--surface-border)] shadow-lg" style={{ pointerEvents: "all" }}>
         <button
           onClick={() => setIsGlobe(false)}
           className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${!isGlobe ? "bg-emerald-500/20 text-emerald-300" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
@@ -254,35 +289,32 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       </div>
 
       {isGlobe ? (
-        /* ── GLOBE VIEW ── */
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-bg)]">
           <GlobeView
             visits={visits}
             wishlist={wishlist}
             colorScheme={colorScheme}
             isDark={isDark}
-            filterMode={filterMode}
+            filterMode={effectiveFilter}
             onVisitClick={setSelectedVisit}
           />
-
-          {/* Filter pills for globe */}
           <div className="absolute top-16 left-4 z-10 flex items-center gap-2 flex-wrap">
-            {(["all", "countries", "cities", "neighborhoods", "wishlist"] as FilterMode[]).map(f => (
+            {(["auto", "countries", "cities", "neighborhoods", "wishlist"] as FilterMode[]).map(f => (
               <button key={f} onClick={() => setFilterMode(f)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shadow-lg ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shadow-lg flex-shrink-0 ${
                   filterMode === f
-                    ? f === "wishlist" ? "bg-violet-500/20 text-violet-300 border border-violet-500/30" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                    ? f === "wishlist" ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                    : f === "auto" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                     : "glass text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}>
-                {f === "all" ? "Tout" : f === "countries" ? "🌍 Pays" : f === "cities" ? "🏙 Villes" : f === "neighborhoods" ? "🏘 Quartiers" : "💜 Wishlist"}
+                {f === "auto" ? "⚡ Auto" : f === "countries" ? "🌍 Pays" : f === "cities" ? "🏙 Villes" : f === "neighborhoods" ? "🏘 Quartiers" : "💜 Wishlist"}
               </button>
             ))}
           </div>
-
           <div className="absolute bottom-10 left-4 z-10 glass rounded-xl px-3 py-2 text-xs text-[var(--text-secondary)]">
-            🌍 Glisse pour tourner le globe
+            🌍 Glisse pour tourner
           </div>
-
           {selectedVisit && (
             <div className="absolute right-0 top-0 bottom-0 z-20 w-full max-w-sm glass-elevated border-l border-[var(--surface-border)] p-5 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
@@ -290,21 +322,15 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
                 <button onClick={() => setSelectedVisit(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg">✕</button>
               </div>
               {selectedVisit.country_name && <p className="text-sm text-[var(--text-secondary)] mb-3">{selectedVisit.country_name}</p>}
-              {selectedVisit.visited_at && (
-                <p className="text-xs text-[var(--text-muted)]">
-                  {new Date(selectedVisit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "long", day: "numeric" })}
-                </p>
-              )}
+              {selectedVisit.visited_at && <p className="text-xs text-[var(--text-muted)]">{new Date(selectedVisit.visited_at).toLocaleDateString("fr-FR", { year: "numeric", month: "long", day: "numeric" })}</p>}
               {selectedVisit.notes && <p className="text-sm text-[var(--text-secondary)] mt-3 italic">&quot;{selectedVisit.notes}&quot;</p>}
               {selectedVisit.rating && <div className="text-amber-400 mt-3 text-lg">{"★".repeat(selectedVisit.rating)}{"☆".repeat(5 - selectedVisit.rating)}</div>}
             </div>
           )}
         </div>
       ) : (
-        /* ── MAP VIEW ── */
         <>
           <div ref={mapContainerRef} className="absolute inset-0 z-0" />
-
           <MapControls
             filterMode={filterMode} setFilterMode={setFilterMode}
             isDark={isDark} setIsDark={setIsDark}
@@ -313,23 +339,22 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
             onAddVisit={() => { setAddCoords(null); setAddModalOpen(true); }}
             searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           />
-
           {selectedVisit && (
-            <VisitPanel
-              visit={selectedVisit}
-              onClose={() => setSelectedVisit(null)}
-              onUpdated={handleVisitAdded}
-              userId={userId}
-            />
+            <VisitPanel visit={selectedVisit} onClose={() => setSelectedVisit(null)} onUpdated={handleVisitAdded} userId={userId} />
           )}
-
           {addModalOpen && (
             <AddVisitModal
               coords={addCoords} userId={userId}
               onClose={() => { setAddModalOpen(false); setAddCoords(null); }}
-              onVisitAdded={handleVisitAdded}
-              onWishlistAdded={handleWishlistAdded}
+              onVisitAdded={handleVisitAdded} onWishlistAdded={handleWishlistAdded}
             />
+          )}
+
+          {/* Auto mode indicator */}
+          {filterMode === "auto" && (
+            <div className="absolute top-[104px] left-4 z-10 glass rounded-lg px-2.5 py-1 text-[10px] text-amber-400 border border-amber-500/20">
+              ⚡ Auto — {effectiveFilter === "countries" ? "Pays" : effectiveFilter === "cities" ? "Villes" : "Quartiers"}
+            </div>
           )}
 
           <div className="absolute bottom-10 left-4 z-10 glass rounded-xl px-3 py-2 flex items-center gap-4 text-xs text-[var(--text-secondary)]">
