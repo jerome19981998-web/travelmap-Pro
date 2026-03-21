@@ -65,6 +65,15 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       }
     });
 
+    const project = (lat: number, lng: number, radius: number, cx: number, cy: number) => {
+      const pos = latLngToXYZ(lat, lng, radius);
+      const rotY = pos.x * Math.cos(rotationRef.current.y) - pos.z * Math.sin(rotationRef.current.y);
+      const rotZ = pos.x * Math.sin(rotationRef.current.y) + pos.z * Math.cos(rotationRef.current.y);
+      const rotX2 = rotY * Math.cos(rotationRef.current.x) - pos.y * Math.sin(rotationRef.current.x);
+      const rotY2 = rotY * Math.sin(rotationRef.current.x) + pos.y * Math.cos(rotationRef.current.x);
+      return { x: cx + rotX2, y: cy - rotY2, visible: rotZ > -radius * 0.1 };
+    };
+
     const draw = () => {
       const w = canvas.offsetWidth;
       const h = canvas.offsetHeight;
@@ -77,15 +86,6 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       // Background
       ctx.fillStyle = isDark ? "#050a14" : "#f0f9ff";
       ctx.fillRect(0, 0, w, h);
-
-      // Globe shadow
-      const shadowGrad = ctx.createRadialGradient(cx + radius * 0.1, cy + radius * 0.1, 0, cx, cy, radius * 1.2);
-      shadowGrad.addColorStop(0, "transparent");
-      shadowGrad.addColorStop(1, isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.15)");
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = shadowGrad;
-      ctx.fill();
 
       // Ocean gradient
       const oceanGrad = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius);
@@ -103,44 +103,40 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       ctx.fillStyle = oceanGrad;
       ctx.fill();
 
-      // Grid lines (lat/lng)
-      ctx.strokeStyle = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.05)";
+      // Grid lines
+      ctx.strokeStyle = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.06)";
       ctx.lineWidth = 0.5;
       for (let lat = -75; lat <= 75; lat += 15) {
         ctx.beginPath();
         let first = true;
-        for (let lng = -180; lng <= 180; lng += 2) {
-          const pos = latLngToXYZ(lat, lng, radius);
-          const rotY = pos.x * Math.cos(rotationRef.current.y) - pos.z * Math.sin(rotationRef.current.y);
-          const rotZ = pos.x * Math.sin(rotationRef.current.y) + pos.z * Math.cos(rotationRef.current.y);
-          const rotX2 = rotY * Math.cos(rotationRef.current.x) - pos.y * Math.sin(rotationRef.current.x);
-          const rotY2 = rotY * Math.sin(rotationRef.current.x) + pos.y * Math.cos(rotationRef.current.x);
-          if (rotZ > 0) {
-            const sx = cx + rotX2;
-            const sy = cy - rotY2;
-            if (first) { ctx.moveTo(sx, sy); first = false; }
-            else ctx.lineTo(sx, sy);
+        for (let lng = -180; lng <= 180; lng += 3) {
+          const pt = project(lat, lng, radius, cx, cy);
+          if (pt.visible) {
+            if (first) { ctx.moveTo(pt.x, pt.y); first = false; }
+            else ctx.lineTo(pt.x, pt.y);
+          } else { first = true; }
+        }
+        ctx.stroke();
+      }
+      for (let lng = -180; lng <= 180; lng += 30) {
+        ctx.beginPath();
+        let first = true;
+        for (let lat = -90; lat <= 90; lat += 3) {
+          const pt = project(lat, lng, radius, cx, cy);
+          if (pt.visible) {
+            if (first) { ctx.moveTo(pt.x, pt.y); first = false; }
+            else ctx.lineTo(pt.x, pt.y);
           } else { first = true; }
         }
         ctx.stroke();
       }
 
-      // Project point helper
-      const project = (lat: number, lng: number) => {
-        const pos = latLngToXYZ(lat, lng, radius);
-        const rotY = pos.x * Math.cos(rotationRef.current.y) - pos.z * Math.sin(rotationRef.current.y);
-        const rotZ = pos.x * Math.sin(rotationRef.current.y) + pos.z * Math.cos(rotationRef.current.y);
-        const rotX2 = rotY * Math.cos(rotationRef.current.x) - pos.y * Math.sin(rotationRef.current.x);
-        const rotY2 = rotY * Math.sin(rotationRef.current.x) + pos.y * Math.cos(rotationRef.current.x);
-        return { x: cx + rotX2, y: cy - rotY2, visible: rotZ > -radius * 0.1 };
-      };
-
-      // Draw visited points
-      const showCountries = filterMode === "all" || filterMode === "countries";
+      // Filter logic
       const showCities = filterMode === "all" || filterMode === "cities";
       const showNeighborhoods = filterMode === "all" || filterMode === "neighborhoods";
       const showWishlist = filterMode === "all" || filterMode === "wishlist";
 
+      // Visited markers
       if (filterMode !== "wishlist") {
         visits.forEach(visit => {
           if (!visit.lat || !visit.lng) return;
@@ -150,7 +146,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
           if (filterMode === "cities" && isNeighborhood) return;
           if (filterMode === "neighborhoods" && !isNeighborhood) return;
 
-          const pt = project(visit.lat, visit.lng);
+          const pt = project(visit.lat, visit.lng, radius, cx, cy);
           if (!pt.visible) return;
 
           const count = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
@@ -177,11 +173,11 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
         });
       }
 
-      // Draw wishlist points
+      // Wishlist markers
       if (showWishlist) {
         wishlist.forEach(item => {
           if (!item.lat || !item.lng) return;
-          const pt = project(item.lat, item.lng);
+          const pt = project(item.lat, item.lng, radius, cx, cy);
           if (!pt.visible) return;
           const pc = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
 
@@ -229,7 +225,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
 
     animRef.current = requestAnimationFrame(draw);
 
-    // Mouse / touch events
+    // Mouse events
     const onMouseDown = (e: MouseEvent) => {
       isDragging.current = true;
       autoRotate.current = false;
@@ -246,6 +242,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
     };
     const onMouseUp = () => { isDragging.current = false; };
 
+    // Touch events
     const onTouchStart = (e: TouchEvent) => {
       isDragging.current = true;
       autoRotate.current = false;
@@ -266,6 +263,31 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       setTimeout(() => { autoRotate.current = true; }, 3000);
     };
 
+    // Click to select visit
+    const onClick = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) * 0.42;
+
+      let closest: typeof visits[0] | null = null;
+      let minDist = 20;
+
+      visits.forEach(visit => {
+        if (!visit.lat || !visit.lng) return;
+        const pt = project(visit.lat, visit.lng, radius, cx, cy);
+        if (!pt.visible) return;
+        const dist = Math.sqrt((mx - pt.x) ** 2 + (my - pt.y) ** 2);
+        if (dist < minDist) { minDist = dist; closest = visit; }
+      });
+
+      if (closest) onVisitClick(closest);
+    };
+
     canvas.addEventListener("mousedown", onMouseDown);
     canvas.addEventListener("mousemove", onMouseMove);
     canvas.addEventListener("mouseup", onMouseUp);
@@ -273,9 +295,27 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
     canvas.addEventListener("touchstart", onTouchStart, { passive: false });
     canvas.addEventListener("touchmove", onTouchMove, { passive: false });
     canvas.addEventListener("touchend", onTouchEnd);
+    canvas.addEventListener("click", onClick);
 
-    // Click to select visit
-    const onClick = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener("resize", resize);
+      canvas.removeEventListener("mousedown", onMouseDown);
+      canvas.removeEventListener("mousemove", onMouseMove);
+      canvas.removeEventListener("mouseup", onMouseUp);
+      canvas.removeEventListener("mouseleave", onMouseUp);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("click", onClick);
+    };
+  }, [visits, wishlist, colorScheme, isDark, filterMode, onVisitClick]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="w-full h-full cursor-grab active:cursor-grabbing"
+      style={{ touchAction: "none" }}
+    />
+  );
+}
