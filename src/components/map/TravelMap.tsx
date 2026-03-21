@@ -107,15 +107,15 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       if (!visit.lat || !visit.lng) return;
 
       const type = visit.place_type;
-      const isCountry      = type === "country" || type === "region";
-      const isCity         = type === "city" || type === "landmark";
       const isNeighborhood = type === "neighborhood";
+const isCity         = type === "city" || type === "landmark";
+const isCountry      = !isCity && !isNeighborhood; // tout le reste = pays
 
-      // Apply filter
-      if (isCountry      && !showCountries)     return;
-      if (isCity         && !showCities)        return;
-      if (isNeighborhood && !showNeighborhoods) return;
-
+// Apply filter — si aucun filtre spécifique, on montre tout
+if (filterMode === "countries"     && (isCity || isNeighborhood)) return;
+if (filterMode === "cities"        && !isCity)                    return;
+if (filterMode === "neighborhoods" && !isNeighborhood)            return;
+if (filterMode === "wishlist")                                     return;
       const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url
                       || visit.visit_photos?.[0]?.url;
 
