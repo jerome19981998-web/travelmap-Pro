@@ -9,7 +9,7 @@ const TravelMap = dynamic(() => import("./TravelMap"), {
     <div className="w-full h-full flex items-center justify-center bg-[var(--map-bg)]">
       <div className="flex flex-col items-center gap-4">
         <div className="w-10 h-10 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-sm text-[var(--text-secondary)]">Loading map...</p>
+        <p className="text-sm text-[var(--text-secondary)]">Chargement de la carte...</p>
       </div>
     </div>
   ),
@@ -19,8 +19,9 @@ interface Props {
   visits: (Visit & { visit_photos: { url: string; is_cover: boolean }[] })[];
   wishlist: WishlistItem[];
   userId: string;
+  colorScheme: string;
 }
 
-export default function MapWrapper({ visits, wishlist, userId }: Props) {
-  return <TravelMap visits={visits} wishlist={wishlist} userId={userId} />;
+export default function MapWrapper({ visits, wishlist, userId, colorScheme }: Props) {
+  return <TravelMap visits={visits} wishlist={wishlist} userId={userId} colorScheme={colorScheme} />;
 }
