@@ -74,8 +74,16 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     const map = L.map(mapContainerRef.current, {
-      center: [20, 0], zoom: 2, zoomControl: false, attributionControl: false,
-    });
+  center: [20, 0],
+  zoom: 2,
+  minZoom: 2,
+  maxZoom: 19,
+  zoomControl: false,
+  attributionControl: false,
+  maxBounds: [[-90, -180], [90, 180]],
+  maxBoundsViscosity: 1.0,
+  worldCopyJump: false,
+});
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       maxZoom: 19, subdomains: "abcd",
     }).addTo(map);
