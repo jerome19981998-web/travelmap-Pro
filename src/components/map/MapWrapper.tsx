@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { Visit, WishlistItem } from "@/types/database";
+import type { Visit, VisitPhoto, WishlistItem } from "@/types/database";
 
 const TravelMap = dynamic(() => import("./TravelMap"), {
   ssr: false,
@@ -16,7 +16,7 @@ const TravelMap = dynamic(() => import("./TravelMap"), {
 });
 
 interface Props {
-  visits: (Visit & { visit_photos: { url: string; is_cover: boolean }[] })[];
+  visits: (Visit & { visit_photos: VisitPhoto[] })[];
   wishlist: WishlistItem[];
   userId: string;
   colorScheme: string;
