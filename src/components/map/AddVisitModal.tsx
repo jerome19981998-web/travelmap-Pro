@@ -302,10 +302,7 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
                   notes: notes || null,
                 };
               });
-              const { error: stopsError } = await tripStopsTable.insert(stops);
-              if (stopsError) console.warn("Trip stops could not be saved yet", stopsError.message);
-            } else if (tripError) {
-              console.warn("Trips table is not ready yet", tripError.message);
+              await tripStopsTable.insert(stops);
             }
           }
 
@@ -429,7 +426,7 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
             {mode === "trip" && (
               <div className="mt-2 space-y-2">
                 <button
-                  onClick={addTripStop}
+                  onClick={() => addTripStop()}
                   className="w-full rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
                 >
                   Ajouter comme étape

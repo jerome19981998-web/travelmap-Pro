@@ -84,7 +84,7 @@ export default function TripsClient({
             <div>
               <h2 className="font-semibold text-amber-200">Migration Supabase a appliquer</h2>
               <p className="mt-1 text-sm text-amber-100/80">
-                Les voyages simples continuent de s'enregistrer. Pour activer les vrais voyages relies,
+                Les voyages simples continuent de s&apos;enregistrer. Pour activer les vrais voyages relies,
                 applique la migration <span className="font-mono">003_trips.sql</span> dans Supabase.
               </p>
             </div>

@@ -20,6 +20,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
       };
       places: {
         Row: {
@@ -43,6 +44,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["places"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["places"]["Insert"]>;
+        Relationships: [];
       };
       visits: {
         Row: {
@@ -69,6 +71,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["visits"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["visits"]["Insert"]>;
+        Relationships: [];
       };
       visit_photos: {
         Row: {
@@ -84,6 +87,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["visit_photos"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["visit_photos"]["Insert"]>;
+        Relationships: [];
       };
       wishlist: {
         Row: {
@@ -106,6 +110,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["wishlist"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["wishlist"]["Insert"]>;
+        Relationships: [];
       };
       annual_goals: {
         Row: {
@@ -121,6 +126,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["annual_goals"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["annual_goals"]["Insert"]>;
+        Relationships: [];
       };
       badge_definitions: {
         Row: {
@@ -135,6 +141,7 @@ export interface Database {
         };
         Insert: Database["public"]["Tables"]["badge_definitions"]["Row"];
         Update: Partial<Database["public"]["Tables"]["badge_definitions"]["Row"]>;
+        Relationships: [];
       };
       user_badges: {
         Row: {
@@ -145,6 +152,7 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["user_badges"]["Row"], "id" | "earned_at">;
         Update: Partial<Database["public"]["Tables"]["user_badges"]["Insert"]>;
+        Relationships: [];
       };
       shared_maps: {
         Row: {
@@ -164,6 +172,179 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["shared_maps"]["Row"], "id" | "share_token" | "created_at" | "view_count">;
         Update: Partial<Database["public"]["Tables"]["shared_maps"]["Insert"]>;
+        Relationships: [];
+      };
+      follows: {
+        Row: {
+          follower_id: string;
+          following_id: string;
+          created_at: string;
+        };
+        Insert: {
+          follower_id: string;
+          following_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["follows"]["Insert"]>;
+        Relationships: [];
+      };
+      friendships: {
+        Row: {
+          id: string;
+          requester_id: string;
+          addressee_id: string;
+          status: "pending" | "accepted" | "rejected" | "blocked";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          requester_id: string;
+          addressee_id: string;
+          status?: "pending" | "accepted" | "rejected" | "blocked";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["friendships"]["Insert"]>;
+        Relationships: [];
+      };
+      groups: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          emoji: string;
+          cover_color: string;
+          owner_id: string;
+          is_public: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          description?: string | null;
+          emoji?: string;
+          cover_color?: string;
+          owner_id: string;
+          is_public?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["groups"]["Insert"]>;
+        Relationships: [];
+      };
+      group_members: {
+        Row: {
+          id: string;
+          group_id: string;
+          user_id: string;
+          role: "owner" | "admin" | "member";
+          status: "pending" | "accepted" | "rejected";
+          invited_by: string | null;
+          joined_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          user_id: string;
+          role?: "owner" | "admin" | "member";
+          status?: "pending" | "accepted" | "rejected";
+          invited_by?: string | null;
+          joined_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["group_members"]["Insert"]>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: "friend_request" | "friend_accepted" | "group_invite" | "new_badge" | "friend_visited";
+          from_user_id: string | null;
+          reference_id: string | null;
+          message: string;
+          is_read: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: "friend_request" | "friend_accepted" | "group_invite" | "new_badge" | "friend_visited";
+          from_user_id?: string | null;
+          reference_id?: string | null;
+          message: string;
+          is_read?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["notifications"]["Insert"]>;
+        Relationships: [];
+      };
+      trips: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          started_at: string | null;
+          ended_at: string | null;
+          cover_photo_url: string | null;
+          is_private: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          started_at?: string | null;
+          ended_at?: string | null;
+          cover_photo_url?: string | null;
+          is_private?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trips"]["Insert"]>;
+        Relationships: [];
+      };
+      trip_stops: {
+        Row: {
+          id: string;
+          trip_id: string;
+          visit_id: string | null;
+          user_id: string;
+          stop_order: number;
+          place_name: string;
+          country_code: string | null;
+          country_name: string | null;
+          lat: number | null;
+          lng: number | null;
+          arrived_at: string | null;
+          departed_at: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          visit_id?: string | null;
+          user_id: string;
+          stop_order?: number;
+          place_name: string;
+          country_code?: string | null;
+          country_name?: string | null;
+          lat?: number | null;
+          lng?: number | null;
+          arrived_at?: string | null;
+          departed_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["trip_stops"]["Insert"]>;
+        Relationships: [];
       };
     };
     Views: {
@@ -177,8 +358,12 @@ export interface Database {
           first_visit: string | null;
           last_visit: string | null;
         };
+        Relationships: [];
       };
     };
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
 
@@ -191,6 +376,12 @@ export type AnnualGoal = Database["public"]["Tables"]["annual_goals"]["Row"];
 export type BadgeDefinition = Database["public"]["Tables"]["badge_definitions"]["Row"];
 export type UserBadge = Database["public"]["Tables"]["user_badges"]["Row"];
 export type SharedMap = Database["public"]["Tables"]["shared_maps"]["Row"];
+export type Friendship = Database["public"]["Tables"]["friendships"]["Row"];
+export type Group = Database["public"]["Tables"]["groups"]["Row"];
+export type GroupMember = Database["public"]["Tables"]["group_members"]["Row"];
+export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+export type Trip = Database["public"]["Tables"]["trips"]["Row"];
+export type TripStop = Database["public"]["Tables"]["trip_stops"]["Row"];
 export type UserStats = Database["public"]["Views"]["user_stats"]["Row"];
 
 export type VisitWithPhotos = Visit & { visit_photos: VisitPhoto[] };

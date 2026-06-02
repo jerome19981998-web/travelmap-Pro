@@ -119,7 +119,7 @@ export default function MapControls({
                   className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Ajouter "{searchQuery.trim()}"
+                  Ajouter &quot;{searchQuery.trim()}&quot;
                 </button>
               </div>
             )}
@@ -143,7 +143,7 @@ export default function MapControls({
 
         {/* Add — desktop only */}
         <button
-          onClick={onAddVisit}
+          onClick={() => onAddVisit()}
           className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -175,7 +175,7 @@ export default function MapControls({
 
       {/* FAB mobile */}
       <button
-        onClick={onAddVisit}
+        onClick={() => onAddVisit()}
         className="absolute bottom-24 right-4 z-20 lg:hidden w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-xl shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-transform"
       >
         <Plus className="w-6 h-6" />

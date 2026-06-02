@@ -288,4 +288,4 @@ export const translations = {
 } as const;
 
 export type TranslationKey = keyof typeof translations.en;
-export type Translations = typeof translations.en;
+export type Translations = Record<TranslationKey, string>;

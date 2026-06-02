@@ -239,6 +239,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
     if (!containerRef.current) return;
 
     let mounted = true;
+    const container = containerRef.current;
     let isDragging = false;
     let isPointerOver = false;
     let pointerMoved = false;
@@ -657,7 +658,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       cancelAnimationFrame(frameRef.current);
       rendererRef.current?.dispose();
       rendererRef.current = null;
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      if (container) container.innerHTML = "";
     };
   }, [visits, wishlist, colorScheme, isDark, filterMode, onVisitClick]);
 

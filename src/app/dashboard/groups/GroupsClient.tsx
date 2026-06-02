@@ -47,6 +47,10 @@ const COLORS = [
 
 const EMOJIS = ["✈️", "🌍", "🏖️", "🏔️", "🗺️", "🚂", "⛵", "🎒", "🏕️", "🌴"];
 
+function firstRelation<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] || null : value;
+}
+
 export default function GroupsClient({ userId, groups, friends }: Props) {
   const [groupList, setGroupList] = useState(groups);
   const [creating, setCreating] = useState(false);
@@ -92,7 +96,12 @@ export default function GroupsClient({ userId, groups, friends }: Props) {
       .from("group_members")
       .select(`id, role, status, group:group_id(id, name, description, emoji, cover_color, owner_id, created_at, group_members(count))`)
       .eq("user_id", userId).eq("status", "accepted");
-    if (updated) setGroupList(updated);
+    if (updated) {
+      setGroupList(updated.map((membership: any) => ({
+        ...membership,
+        group: firstRelation(membership.group),
+      })).filter((membership: any) => membership.group));
+    }
     setSaving(false);
   };
 

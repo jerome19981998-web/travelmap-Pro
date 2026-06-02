@@ -3,7 +3,7 @@
 import type { BadgeDefinition, UserStats } from "@/types/database";
 import { Trophy, Lock } from "lucide-react";
 import { clsx } from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 interface EarnedBadge {
@@ -34,9 +34,12 @@ const TIER_BG = ["", "bg-amber-400/10 border-amber-400/20", "bg-sky-400/10 borde
 export default function BadgesClient({ allBadges, earned, stats, userId }: Props) {
   const [checkedBadges, setCheckedBadges] = useState<string[]>([]);
 
-  const earnedIds = new Set(earned.map(e => e.badge_id));
-  const earnedDates: Record<string, string> = {};
-  earned.forEach(e => { earnedDates[e.badge_id] = e.earned_at; });
+  const earnedIds = useMemo(() => new Set(earned.map(e => e.badge_id)), [earned]);
+  const earnedDates = useMemo(() => {
+    const dates: Record<string, string> = {};
+    earned.forEach(e => { dates[e.badge_id] = e.earned_at; });
+    return dates;
+  }, [earned]);
 
   // Auto-check and grant badges based on stats
   useEffect(() => {

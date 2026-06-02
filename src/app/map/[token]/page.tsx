@@ -35,7 +35,7 @@ export default async function PublicMapPage({ params }: Props) {
     supabase.from("visits").select("*, visit_photos(*)").eq("user_id", share.user_id).eq("is_private", false),
     share.show_stats ? supabase.from("user_stats").select("*").eq("user_id", share.user_id).single() : { data: null },
     share.show_badges ? supabase.from("user_badges").select("*, badge_definitions(*)").eq("user_id", share.user_id) : { data: null },
-    supabase.from("profiles").select("full_name, avatar_url").eq("id", share.user_id).single(),
+    supabase.from("profiles").select("full_name, avatar_url, color_scheme").eq("id", share.user_id).single(),
   ]);
 
   return (
@@ -66,7 +66,7 @@ export default async function PublicMapPage({ params }: Props) {
 
       {/* Map */}
       <div style={{ height: "calc(100vh - 130px)" }}>
-        <PublicMapWrapper visits={visits || []} wishlist={[]} userId={share.user_id} />
+        <PublicMapWrapper visits={visits || []} wishlist={[]} userId={share.user_id} colorScheme={profile?.color_scheme || "emerald"} />
       </div>
 
       {/* Badges */}

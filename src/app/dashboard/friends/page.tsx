@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import FriendsClient from "./FriendsClient";
 
+function firstRelation<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] || null : value;
+}
+
 export default async function FriendsPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -29,11 +33,23 @@ export default async function FriendsPage() {
       .order("created_at", { ascending: false }),
   ]);
 
+  const normalizedFriends = (friends || []).map((friendship: any) => ({
+    ...friendship,
+    requester: firstRelation(friendship.requester),
+    addressee: firstRelation(friendship.addressee),
+  })).filter((friendship: any) => friendship.requester && friendship.addressee);
+
+  const normalizedPending = (pending || []).map((friendship: any) => ({
+    ...friendship,
+    requester: firstRelation(friendship.requester),
+    addressee: firstRelation(friendship.addressee),
+  })).filter((friendship: any) => friendship.requester && friendship.addressee);
+
   return (
     <FriendsClient
       userId={user!.id}
-      friends={friends || []}
-      pending={pending || []}
+      friends={normalizedFriends}
+      pending={normalizedPending}
       notifications={notifications || []}
     />
   );

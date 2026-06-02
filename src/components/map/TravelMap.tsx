@@ -249,7 +249,6 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         inferred_code: resolveCountryCode(visit, countryNameIndex),
       }));
       setDebugRows(rows);
-      console.table(rows);
 
       const visitUpdates = visits
         .map((visit) => ({ visit, code: resolveCountryCode(visit, countryNameIndex) }))
@@ -285,7 +284,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           })
         );
       }
-    }).catch(console.error);
+    }).catch(() => {});
   }, [userId, visits, wishlist]);
 
   // Init map
@@ -394,7 +393,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         },
         style: () => ({ fillColor: "#8b5cf6", fillOpacity: 0.12, color: "#8b5cf6", weight: 1.5, opacity: 0.5, dashArray: "5 5" }),
       }).addTo(countryLayerRef.current);
-    }).catch(console.error);
+    }).catch(() => {});
   }, [visits, wishlist, effectiveFilter, colorScheme]);
 
   // City / neighborhood markers

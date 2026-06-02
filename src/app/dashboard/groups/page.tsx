@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import GroupsClient from "./GroupsClient";
 
+function firstRelation<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] || null : value;
+}
+
 export default async function GroupsPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -21,14 +25,21 @@ export default async function GroupsPage() {
       .eq("status", "accepted"),
   ]);
 
-  const friendProfiles = (friends || []).map((f: any) =>
-    f.requester.id === user!.id ? f.addressee : f.requester
-  );
+  const normalizedGroups = (myGroups || []).map((membership: any) => ({
+    ...membership,
+    group: firstRelation(membership.group),
+  })).filter((membership: any) => membership.group);
+
+  const friendProfiles = (friends || []).map((f: any) => {
+    const requester = firstRelation(f.requester);
+    const addressee = firstRelation(f.addressee);
+    return requester?.id === user!.id ? addressee : requester;
+  }).filter(Boolean);
 
   return (
     <GroupsClient
       userId={user!.id}
-      groups={myGroups || []}
+      groups={normalizedGroups}
       friends={friendProfiles}
     />
   );
