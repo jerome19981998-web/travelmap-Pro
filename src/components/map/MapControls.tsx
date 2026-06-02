@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Moon, Sun, Plus, Heart, Globe, Building2, Home, X, Zap } from "lucide-react";
+import { Search, Moon, Sun, Plus, X } from "lucide-react";
 import type { Visit, WishlistItem } from "@/types/database";
 import { clsx } from "clsx";
 import { useLocale } from "@/hooks/useLocale";
@@ -29,23 +29,27 @@ export default function MapControls({
   const [results, setResults] = useState<(Visit | WishlistItem)[]>([]);
   const { t } = useLocale();
 
+  const normalize = (value: string | null | undefined) =>
+    (value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
   const handleSearch = (q: string) => {
     setSearchQuery(q);
     if (!q.trim()) { setResults([]); return; }
-    const lower = q.toLowerCase();
-    const vResults = visits.filter(v =>
-      v.place_name.toLowerCase().includes(lower) ||
-      v.country_name?.toLowerCase().includes(lower)
+    const lower = normalize(q);
+    const vResults = visits.filter((v) =>
+      [v.place_name, v.country_name, v.place_type, v.notes].some((value) => normalize(value).includes(lower))
     );
-    const wResults = wishlist.filter(w =>
-      w.place_name.toLowerCase().includes(lower) ||
-      w.country_name?.toLowerCase().includes(lower)
+    const wResults = wishlist.filter((w) =>
+      [w.place_name, w.country_name, w.place_type, w.notes, w.priority].some((value) => normalize(value).includes(lower))
     );
     setResults([...vResults, ...wResults].slice(0, 6));
   };
 
   const selectResult = (item: Visit | WishlistItem) => {
-    if (item.lat && item.lng) onFlyTo(item.lat, item.lng);
+    if (Number.isFinite(item.lat) && Number.isFinite(item.lng)) onFlyTo(item.lat!, item.lng!);
     setSearchQuery(""); setResults([]); setSearchOpen(false);
   };
 
@@ -94,69 +98,3 @@ export default function MapControls({
                     <span className="text-sm">{isVisit(item) ? "📍" : "💜"}</span>
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
-                      {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* Dark mode */}
-        <button
-          onClick={() => setIsDark(!isDark)}
-          className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
-        >
-          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
-
-        {/* Add — desktop only */}
-        <button
-          onClick={onAddVisit}
-          className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t.addPlace}</span>
-        </button>
-      </div>
-
-      {/* Filter bar — scrollable */}
-      <div className="absolute top-14 left-0 right-0 z-10 px-3">
-        <div
-          className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide"
-          style={{ WebkitOverflowScrolling: "touch" }}
-        >
-          {filters.map(({ value, label, color }) => (
-            <button
-              key={value}
-              onClick={() => setFilterMode(value)}
-              className={clsx(
-                "flex items-center px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex-shrink-0 active:scale-95 whitespace-nowrap",
-                activeStyle(value, color)
-              )}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="w-2 flex-shrink-0" />
-        </div>
-      </div>
-
-      {/* FAB mobile */}
-      <button
-        onClick={onAddVisit}
-        className="absolute bottom-24 right-4 z-20 lg:hidden w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-xl shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-transform"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
-    </>
-  );
-}
