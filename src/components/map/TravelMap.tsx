@@ -116,6 +116,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const countryLayerRef = useRef<L.LayerGroup | null>(null);
+  const repairedCountryCodesRef = useRef(false);
 
   const [visits, setVisits] = useState(initialVisits);
   const [wishlist, setWishlist] = useState(initialWishlist);
@@ -130,6 +131,52 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const { t } = useLocale();
 
   const effectiveFilter = resolveFilter(filterMode, zoom);
+
+  // Repair older rows that have a country name but no usable ISO country code.
+  useEffect(() => {
+    if (repairedCountryCodesRef.current) return;
+    repairedCountryCodesRef.current = true;
+
+    fetchGeoJSON().then(async (geojson) => {
+      const countryNameIndex = buildCountryNameIndex(geojson);
+      const supabase = createClient();
+
+      const visitUpdates = visits
+        .map((visit) => ({ visit, code: getCountryCodeFromRecord(visit, countryNameIndex) }))
+        .filter(({ visit, code }) => code && visit.country_code !== code);
+      const wishlistUpdates = wishlist
+        .map((item) => ({ item, code: getCountryCodeFromRecord(item, countryNameIndex) }))
+        .filter(({ item, code }) => code && item.country_code !== code);
+
+      if (visitUpdates.length > 0) {
+        await Promise.all(
+          visitUpdates.map(({ visit, code }) =>
+            (supabase.from("visits") as any).update({ country_code: code }).eq("id", visit.id).eq("user_id", userId)
+          )
+        );
+        setVisits((current) =>
+          current.map((visit) => {
+            const repaired = visitUpdates.find(({ visit: updated }) => updated.id === visit.id);
+            return repaired ? { ...visit, country_code: repaired.code } : visit;
+          })
+        );
+      }
+
+      if (wishlistUpdates.length > 0) {
+        await Promise.all(
+          wishlistUpdates.map(({ item, code }) =>
+            (supabase.from("wishlist") as any).update({ country_code: code }).eq("id", item.id).eq("user_id", userId)
+          )
+        );
+        setWishlist((current) =>
+          current.map((item) => {
+            const repaired = wishlistUpdates.find(({ item: updated }) => updated.id === item.id);
+            return repaired ? { ...item, country_code: repaired.code } : item;
+          })
+        );
+      }
+    }).catch(console.error);
+  }, [userId, visits, wishlist]);
 
   // Init map
   useEffect(() => {

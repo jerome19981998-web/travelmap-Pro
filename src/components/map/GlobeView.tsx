@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Visit, VisitPhoto, WishlistItem } from "@/types/database";
 
 type VisitWithPhotos = Visit & { visit_photos: VisitPhoto[] };
@@ -12,6 +12,13 @@ interface Props {
   isDark: boolean;
   filterMode: string;
   onVisitClick: (visit: VisitWithPhotos) => void;
+}
+
+interface HoverLabel {
+  x: number;
+  y: number;
+  title: string;
+  subtitle?: string;
 }
 
 const RADIUS = 1;
@@ -130,6 +137,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
   const rendererRef = useRef<any>(null);
   const frameRef = useRef<number>(0);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const [hoverLabel, setHoverLabel] = useState<HoverLabel | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -137,6 +145,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
     let mounted = true;
     let isDragging = false;
     let isPointerOver = false;
+    let pointerMoved = false;
     let previousPointer = { x: 0, y: 0 };
 
     const init = async () => {
@@ -260,6 +269,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       const visitedCodes = new Set(Object.keys(countryVisitLookup));
       const showCountrySignal = filterMode === "countries" || filterMode === "auto" || filterMode === "wishlist";
       const clickableObjects: any[] = [];
+      const hoverObjects: any[] = [];
 
       const borderMaterial = new THREE.LineBasicMaterial({
         color: isDark ? 0x3b82f6 : 0x1d4ed8,
@@ -314,10 +324,55 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
         );
         platform.position.set(centerPos.x, centerPos.y, centerPos.z);
         platform.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-        platform.userData = { visit: countryVisitLookup[code] };
+        platform.userData = {
+          visit: countryVisitLookup[code],
+          label: {
+            title: getFeatureCountryNames(feature)[0] || code,
+            subtitle: isVisited ? `${visitCount} visite${visitCount > 1 ? "s" : ""}` : "Wishlist",
+          },
+        };
+        hoverObjects.push(platform);
         if (isVisited) clickableObjects.push(platform);
         globeGroup.add(platform);
       });
+
+      const routeVisits = visits
+        .filter((visit) => getValidCoords(visit.lat, visit.lng))
+        .sort((a, b) => {
+          const dateA = new Date(a.visited_at || a.created_at || 0).getTime();
+          const dateB = new Date(b.visited_at || b.created_at || 0).getTime();
+          return dateA - dateB;
+        })
+        .slice(-60);
+
+      if (routeVisits.length > 1 && filterMode !== "countries" && filterMode !== "wishlist") {
+        for (let index = 1; index < routeVisits.length; index += 1) {
+          const previous = routeVisits[index - 1];
+          const current = routeVisits[index];
+          const previousCoords = getValidCoords(previous.lat, previous.lng);
+          const currentCoords = getValidCoords(current.lat, current.lng);
+          if (!previousCoords || !currentCoords) continue;
+          if (previousCoords[0] === currentCoords[0] && previousCoords[1] === currentCoords[1]) continue;
+
+          const start = latLngToVector(previousCoords[0], previousCoords[1], RADIUS * 1.095);
+          const end = latLngToVector(currentCoords[0], currentCoords[1], RADIUS * 1.095);
+          const startVec = new THREE.Vector3(start.x, start.y, start.z);
+          const endVec = new THREE.Vector3(end.x, end.y, end.z);
+          const midVec = startVec.clone().add(endVec).multiplyScalar(0.5).normalize().multiplyScalar(RADIUS * 1.32);
+          const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
+          const countryCode = getCountryCodeFromRecord(current, countryNameIndex);
+          const color = getVisitColor(countryVisitCounts[countryCode || getStoredCountryKey(current) || ""] || 1, colorScheme);
+
+          globeGroup.add(new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(curve.getPoints(36)),
+            new THREE.LineBasicMaterial({
+              color: new THREE.Color(color),
+              transparent: true,
+              opacity: isDark ? 0.36 : 0.42,
+            })
+          ));
+        }
+      }
 
       if (filterMode !== "countries") {
         visits.forEach((visit) => {
@@ -340,8 +395,15 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
             new THREE.MeshBasicMaterial({ color: new THREE.Color(color) })
           );
           marker.position.set(position.x, position.y, position.z);
-          marker.userData = { visit };
+          marker.userData = {
+            visit,
+            label: {
+              title: visit.place_name,
+              subtitle: visit.country_name || (isNeighborhood ? "Quartier" : "Ville"),
+            },
+          };
           clickableObjects.push(marker);
+          hoverObjects.push(marker);
           globeGroup.add(marker);
 
           const beamEnd = latLngToVector(lat, lng, RADIUS * (isNeighborhood ? 1.05 : 1.065));
@@ -381,6 +443,13 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
             new THREE.MeshBasicMaterial({ color: new THREE.Color(color) })
           );
           marker.position.set(position.x, position.y, position.z);
+          marker.userData = {
+            label: {
+              title: item.place_name,
+              subtitle: item.country_name ? `${item.country_name} · Wishlist` : "Wishlist",
+            },
+          };
+          hoverObjects.push(marker);
           globeGroup.add(marker);
         });
       }
@@ -396,14 +465,25 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
 
       const onPointerDown = (event: PointerEvent) => {
         isDragging = true;
+        pointerMoved = false;
         previousPointer = { x: event.clientX, y: event.clientY };
         renderer.domElement.setPointerCapture(event.pointerId);
       };
 
       const onPointerMove = (event: PointerEvent) => {
-        if (!isDragging) return;
+        if (!isDragging) {
+          updatePointer(event);
+          raycaster.setFromCamera(pointer, camera);
+          const hovered = raycaster.intersectObjects(hoverObjects, false)[0]?.object?.userData?.label as
+            | { title: string; subtitle?: string }
+            | undefined;
+          setHoverLabel(hovered ? { x: event.clientX, y: event.clientY, title: hovered.title, subtitle: hovered.subtitle } : null);
+          return;
+        }
         const dx = event.clientX - previousPointer.x;
         const dy = event.clientY - previousPointer.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) pointerMoved = true;
+        setHoverLabel(null);
         globeGroup.rotation.y += dx * DRAG_ROTATION_SPEED;
         globeGroup.rotation.x = Math.max(-1.1, Math.min(1.1, globeGroup.rotation.x + dy * DRAG_ROTATION_SPEED * 0.45));
         previousPointer = { x: event.clientX, y: event.clientY };
@@ -417,12 +497,22 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       };
 
       const onClick = (event: MouseEvent) => {
-        if (isDragging) return;
+        if (isDragging || pointerMoved) return;
         updatePointer(event);
         raycaster.setFromCamera(pointer, camera);
         const intersects = raycaster.intersectObjects(clickableObjects, false);
         const visit = intersects[0]?.object?.userData?.visit as VisitWithPhotos | undefined;
         if (visit) onVisitClick(visit);
+      };
+
+      const onPointerEnter = () => {
+        isPointerOver = true;
+      };
+
+      const onPointerLeave = () => {
+        isPointerOver = false;
+        isDragging = false;
+        setHoverLabel(null);
       };
 
       const onResize = () => {
@@ -438,8 +528,8 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       renderer.domElement.addEventListener("pointermove", onPointerMove);
       renderer.domElement.addEventListener("pointerup", onPointerUp);
       renderer.domElement.addEventListener("pointercancel", onPointerUp);
-      renderer.domElement.addEventListener("mouseenter", () => { isPointerOver = true; });
-      renderer.domElement.addEventListener("mouseleave", () => { isPointerOver = false; isDragging = false; });
+      renderer.domElement.addEventListener("mouseenter", onPointerEnter);
+      renderer.domElement.addEventListener("mouseleave", onPointerLeave);
       renderer.domElement.addEventListener("click", onClick);
       window.addEventListener("resize", onResize);
 
@@ -455,6 +545,8 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
         renderer.domElement.removeEventListener("pointermove", onPointerMove);
         renderer.domElement.removeEventListener("pointerup", onPointerUp);
         renderer.domElement.removeEventListener("pointercancel", onPointerUp);
+        renderer.domElement.removeEventListener("mouseenter", onPointerEnter);
+        renderer.domElement.removeEventListener("mouseleave", onPointerLeave);
         renderer.domElement.removeEventListener("click", onClick);
         window.removeEventListener("resize", onResize);
       };
@@ -474,14 +566,25 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
   }, [visits, wishlist, colorScheme, isDark, filterMode, onVisitClick]);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full cursor-grab active:cursor-grabbing"
-      style={{
-        background: isDark
-          ? "radial-gradient(circle at 50% 45%, #0f2a3d 0%, #07111f 42%, #020617 100%)"
-          : "radial-gradient(circle at 50% 45%, #dff6ff 0%, #eef7ff 52%, #dbeafe 100%)",
-      }}
-    />
+    <div className="relative w-full h-full">
+      <div
+        ref={containerRef}
+        className="w-full h-full cursor-grab active:cursor-grabbing"
+        style={{
+          background: isDark
+            ? "radial-gradient(circle at 50% 45%, #0f2a3d 0%, #07111f 42%, #020617 100%)"
+            : "radial-gradient(circle at 50% 45%, #dff6ff 0%, #eef7ff 52%, #dbeafe 100%)",
+        }}
+      />
+      {hoverLabel && (
+        <div
+          className="pointer-events-none fixed z-[10000] rounded-lg border border-white/10 bg-slate-950/85 px-3 py-2 shadow-2xl backdrop-blur text-left"
+          style={{ left: hoverLabel.x + 14, top: hoverLabel.y + 14 }}
+        >
+          <div className="text-xs font-semibold text-white">{hoverLabel.title}</div>
+          {hoverLabel.subtitle && <div className="mt-0.5 text-[10px] text-slate-300">{hoverLabel.subtitle}</div>}
+        </div>
+      )}
+    </div>
   );
 }

@@ -24,10 +24,15 @@ interface NominatimResult {
     borough?: string;
     city_district?: string;
     district?: string;
+    county?: string;
     suburb?: string;
     quarter?: string;
     neighbourhood?: string;
     neighborhood?: string;
+    road?: string;
+    pedestrian?: string;
+    tourism?: string;
+    attraction?: string;
     hamlet?: string;
     state?: string;
     region?: string;
@@ -106,6 +111,7 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
 
   const getPlaceName = (r: NominatimResult) => {
     const address = r.address || {};
+    if (["country", "nation"].includes(r.type)) return address.country || r.name || "Lieu inconnu";
     const preciseName =
       address.neighbourhood ||
       address.neighborhood ||
@@ -127,6 +133,7 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
   const getContinent = (r: NominatimResult) => CONTINENTS[(r.address?.country_code || "").toLowerCase()] || "Unknown";
   const getPlaceType = (r: NominatimResult): string => {
     const type = r.type;
+    const itemClass = r.class;
     const address = r.address || {};
     const name = getPlaceName(r).toLowerCase();
     const countryName = getCountryName(r).toLowerCase();
@@ -138,12 +145,15 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
       address.city_district ||
       address.district
     );
-    const hasCitySignal = Boolean(address.city || address.town || address.village || address.municipality || address.borough);
+    const hasCitySignal = Boolean(address.city || address.town || address.village || address.municipality || address.borough || address.hamlet);
+    const hasLandmarkSignal = Boolean(address.road || address.pedestrian || address.tourism || address.attraction);
 
     if (name === countryName || type === "country" || type === "nation") return "country";
     if (hasNeighborhoodSignal || ["suburb", "quarter", "neighbourhood", "neighborhood", "district", "city_district"].includes(type)) return "neighborhood";
-    if (hasCitySignal || ["city", "town", "village", "municipality", "borough", "hamlet"].includes(type)) return "city";
-    if (["state", "region", "province", "administrative"].includes(type)) return "region";
+    if (hasCitySignal || ["city", "town", "village", "municipality", "borough", "hamlet", "locality"].includes(type)) return "city";
+    if (hasLandmarkSignal || ["tourism", "attraction", "museum", "hotel", "restaurant", "cafe", "bar", "monument", "viewpoint"].includes(type) || itemClass === "tourism" || itemClass === "amenity") return "landmark";
+    if (["state", "region", "province", "county"].includes(type)) return "region";
+    if (type === "administrative") return hasCitySignal ? "city" : "region";
     return "landmark";
   };
 
