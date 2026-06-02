@@ -202,6 +202,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [addCoords, setAddCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [addInitialQuery, setAddInitialQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debugRows, setDebugRows] = useState<any[]>([]);
   const { t } = useLocale();
 
   const effectiveFilter = resolveFilter(filterMode, zoom);
@@ -214,6 +215,18 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     fetchGeoJSON().then(async (geojson) => {
       const countryNameIndex = buildCountryNameIndex(geojson);
       const supabase = createClient();
+      const rows = visits.map((visit) => ({
+        id: visit.id,
+        place_name: visit.place_name,
+        place_type: visit.place_type,
+        country_code: visit.country_code,
+        country_name: visit.country_name,
+        lat: visit.lat,
+        lng: visit.lng,
+        inferred_code: resolveCountryCode(visit, countryNameIndex),
+      }));
+      setDebugRows(rows);
+      console.table(rows);
 
       const visitUpdates = visits
         .map((visit) => ({ visit, code: resolveCountryCode(visit, countryNameIndex) }))
@@ -312,6 +325,16 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         if (code) countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
       });
       const visitedCodes = new Set(Object.keys(countryVisitCounts));
+      setDebugRows(visits.map((visit) => ({
+        id: visit.id,
+        place_name: visit.place_name,
+        place_type: visit.place_type,
+        country_code: visit.country_code,
+        country_name: visit.country_name,
+        lat: visit.lat,
+        lng: visit.lng,
+        inferred_code: resolveCountryCode(visit, countryNameIndex),
+      })));
       const wishlistCodes = new Set(
         wishlist.map((item) => resolveCountryCode(item, countryNameIndex)).filter(Boolean) as string[]
       );
@@ -549,6 +572,38 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           {filterMode === "auto" && (
             <div className="absolute top-[104px] left-4 z-10 glass rounded-lg px-2.5 py-1 text-[10px] text-amber-400 border border-amber-500/20">
               ⚡ Auto — {effectiveFilter === "countries" ? "Pays" : effectiveFilter === "cities" ? "Villes" : "Quartiers"}
+            </div>
+          )}
+
+          {effectiveFilter === "countries" && debugRows.length > 0 && (
+            <div className="absolute right-4 bottom-24 z-20 w-[320px] max-w-[calc(100vw-2rem)] glass-elevated rounded-xl border border-[var(--surface-border)] p-3 text-xs shadow-2xl">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-[var(--text-primary)]">Debug pays</div>
+                  <div className="text-[10px] text-[var(--text-muted)]">
+                    Codes detectes: {Array.from(new Set(debugRows.map((row) => row.inferred_code).filter(Boolean))).join(", ") || "aucun"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(JSON.stringify(debugRows, null, 2))}
+                  className="rounded-lg bg-white/5 px-2 py-1 text-[10px] text-[var(--text-secondary)] hover:bg-white/10"
+                >
+                  Copier
+                </button>
+              </div>
+              <div className="max-h-44 space-y-1 overflow-y-auto">
+                {debugRows.slice(0, 25).map((row) => (
+                  <div key={row.id} className={`rounded-lg border px-2 py-1 ${row.inferred_code === "FR" ? "border-emerald-500/30 bg-emerald-500/10" : "border-white/5 bg-white/[0.03]"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[var(--text-primary)]">{row.place_name}</span>
+                      <span className="font-mono text-[10px] text-emerald-300">{row.inferred_code || "??"}</span>
+                    </div>
+                    <div className="truncate text-[10px] text-[var(--text-muted)]">
+                      db={safeText(row.country_code) || "-"} · {safeText(row.country_name) || "-"} · {safeText(row.lat)},{safeText(row.lng)}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
