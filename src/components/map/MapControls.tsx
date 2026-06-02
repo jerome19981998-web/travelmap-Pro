@@ -98,3 +98,69 @@ export default function MapControls({
                     <span className="text-sm">{isVisit(item) ? "📍" : "💜"}</span>
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.place_name}</div>
+                      {item.country_name && <div className="text-xs text-[var(--text-muted)]">{item.country_name}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Dark mode */}
+        <button
+          onClick={() => setIsDark(!isDark)}
+          className="glass rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-lg flex-shrink-0"
+        >
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        {/* Add — desktop only */}
+        <button
+          onClick={onAddVisit}
+          className="hidden lg:flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-all shadow-lg flex-shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span>{t.addPlace}</span>
+        </button>
+      </div>
+
+      {/* Filter bar — scrollable */}
+      <div className="absolute top-14 left-0 right-0 z-10 px-3">
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
+          {filters.map(({ value, label, color }) => (
+            <button
+              key={value}
+              onClick={() => setFilterMode(value)}
+              className={clsx(
+                "flex items-center px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex-shrink-0 active:scale-95 whitespace-nowrap",
+                activeStyle(value, color)
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <div className="w-2 flex-shrink-0" />
+        </div>
+      </div>
+
+      {/* FAB mobile */}
+      <button
+        onClick={onAddVisit}
+        className="absolute bottom-24 right-4 z-20 lg:hidden w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-xl shadow-emerald-500/30 flex items-center justify-center active:scale-95 transition-transform"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+    </>
+  );
+}

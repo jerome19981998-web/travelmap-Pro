@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Visit, WishlistItem } from "@/types/database";
+import type { Visit, VisitPhoto, WishlistItem } from "@/types/database";
+
+type VisitWithPhotos = Visit & { visit_photos: VisitPhoto[] };
 
 interface Props {
-  visits: (Visit & { visit_photos: { url: string; is_cover: boolean }[] })[];
+  visits: VisitWithPhotos[];
   wishlist: WishlistItem[];
   colorScheme: string;
   isDark: boolean;
   filterMode: string;
-  onVisitClick: (visit: Visit & { visit_photos: { url: string; is_cover: boolean }[] }) => void;
+  onVisitClick: (visit: VisitWithPhotos) => void;
 }
 
 function getVisitColor(count: number, scheme: string = "emerald"): string {
