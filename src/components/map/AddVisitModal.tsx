@@ -117,7 +117,7 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
   }, [coords]);
 
   const searchPlaces = async (queryOverride?: string) => {
-    const query = (queryOverride ?? searchQuery).trim();
+    const query = (typeof queryOverride === "string" ? queryOverride : searchQuery).trim();
     if (query.length < 2) return;
     setLoading(true);
     setSelected(null);
@@ -380,7 +380,7 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
                 className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-[var(--surface-border)] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
               />
               <button
-                onClick={searchPlaces}
+                onClick={() => searchPlaces()}
                 disabled={loading}
                 className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-colors"
               >
