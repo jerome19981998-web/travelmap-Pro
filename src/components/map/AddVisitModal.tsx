@@ -83,6 +83,7 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tripStops, setTripStops] = useState<NominatimResult[]>([]);
+  const [searchedQuery, setSearchedQuery] = useState("");
 
   // Form fields
   const [visitedAt, setVisitedAt] = useState("");
@@ -119,26 +120,37 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
     const query = (queryOverride ?? searchQuery).trim();
     if (query.length < 2) return;
     setLoading(true);
+    setSelected(null);
+    setSearchedQuery(query);
     try {
       const r = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=8&addressdetails=1&dedupe=1&accept-language=fr,en`
       );
+      if (!r.ok) throw new Error("Search failed");
       const data: NominatimResult[] = await r.json();
       setResults(data.filter((place) => Number.isFinite(parseFloat(place.lat)) && Number.isFinite(parseFloat(place.lon))));
     } catch {
+      setResults([]);
       toast.error("Recherche impossible");
     } finally {
       setLoading(false);
     }
   };
 
-  const addTripStop = () => {
-    const place = selected || results[0];
+  const addTripStop = (placeOverride?: NominatimResult) => {
+    const place = placeOverride || selected || results[0];
     if (!place) { toast.error("Sélectionnez une étape"); return; }
-    setTripStops((current) => current.some((item) => item.place_id === place.place_id) ? current : [...current, place]);
+    let added = false;
+    setTripStops((current) => {
+      if (current.some((item) => item.place_id === place.place_id)) return current;
+      added = true;
+      return [...current, place];
+    });
+    if (!added) toast.error("Cette étape est déjà dans le voyage");
     setSelected(null);
     setResults([]);
     setSearchQuery("");
+    setSearchedQuery("");
   };
 
   const getPlaceName = (r: NominatimResult) => {
@@ -354,7 +366,15 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
             <div className="flex gap-2">
               <input
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchQuery(value);
+                  setSelected(null);
+                  if (value.trim().length < 2) {
+                    setResults([]);
+                    setSearchedQuery("");
+                  }
+                }}
                 onKeyDown={(e) => e.key === "Enter" && searchPlaces()}
                 placeholder={t.searchForPlace}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-[var(--surface-border)] text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
@@ -368,8 +388,8 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
               </button>
             </div>
 
-            {results.length > 0 && !selected && (
-              <div className="mt-2 rounded-xl border border-[var(--surface-border)] overflow-hidden">
+            {results.length > 0 && (
+              <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-[var(--surface-border)]">
                 {results.map((r) => (
                   <button
                     key={r.place_id}
@@ -383,6 +403,12 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+
+            {!loading && searchedQuery && results.length === 0 && !selected && (
+              <div className="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Aucun lieu trouvé pour “{searchedQuery}”. Essayez avec une ville, un pays ou un nom plus précis.
               </div>
             )}
 
