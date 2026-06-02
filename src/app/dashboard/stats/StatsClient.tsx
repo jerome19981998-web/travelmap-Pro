@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { UserStats, Visit, AnnualGoal } from "@/types/database";
+import type { UserStats, Visit, AnnualGoal, WishlistItem } from "@/types/database";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from "recharts";
-import { Globe, Map, Building, TrendingUp, Calendar, Target, Plus } from "lucide-react";
+import { Globe, Map, Building, TrendingUp, Target, Home, Heart, Layers } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 
@@ -14,6 +14,7 @@ interface Props {
   stats: UserStats | null;
   visits: Visit[];
   goals: AnnualGoal[];
+  wishlist: WishlistItem[];
   userId: string;
 }
 
@@ -21,7 +22,16 @@ const CONTINENT_COUNTS: Record<string, number> = {
   Europe: 44, Asia: 48, Americas: 35, Africa: 54, Oceania: 14, Antarctica: 2,
 };
 
-export default function StatsClient({ stats, visits, goals, userId }: Props) {
+function normalizeText(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export default function StatsClient({ stats, visits, goals, wishlist, userId }: Props) {
   const [activeGoalYear, setActiveGoalYear] = useState(new Date().getFullYear());
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalCountries, setGoalCountries] = useState("");
@@ -72,6 +82,31 @@ export default function StatsClient({ stats, visits, goals, userId }: Props) {
       if (v.country_name) map[v.country_name] = (map[v.country_name] || 0) + 1;
     });
     return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 8).map(([name, count]) => ({ name, count }));
+  })();
+
+  const citiesByCountry = (() => {
+    const map: Record<string, Set<string>> = {};
+    visits.forEach((visit) => {
+      const country = visit.country_name || "Unknown";
+      if (!["city", "neighborhood", "landmark"].includes(visit.place_type)) return;
+      map[country] = map[country] || new Set();
+      map[country].add(visit.place_name);
+    });
+    return Object.entries(map)
+      .sort(([, a], [, b]) => b.size - a.size)
+      .slice(0, 8)
+      .map(([country, citySet]) => ({ country, count: citySet.size }));
+  })();
+
+  const residencePlaces = visits.filter((visit) => normalizeText(visit.notes).includes("j y vis"));
+
+  const wishlistByContinent = (() => {
+    const map: Record<string, number> = {};
+    wishlist.forEach((item) => {
+      const continent = item.continent || "Unknown";
+      map[continent] = (map[continent] || 0) + 1;
+    });
+    return Object.entries(map).sort(([, a], [, b]) => b - a);
   })();
 
   const thisYearGoal = goals.find(g => g.year === activeGoalYear);
@@ -131,6 +166,57 @@ export default function StatsClient({ stats, visits, goals, userId }: Props) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Smart insights */}
+        <div className="glass rounded-2xl p-5 lg:col-span-2">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Smart insights</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300 mb-3">
+                <Layers className="w-4 h-4" />
+                Villes par pays
+              </div>
+              <div className="space-y-2">
+                {citiesByCountry.length > 0 ? citiesByCountry.slice(0, 5).map((item) => (
+                  <div key={item.country} className="flex justify-between gap-3 text-sm">
+                    <span className="truncate text-[var(--text-secondary)]">{item.country}</span>
+                    <span className="font-semibold text-emerald-300">{item.count}</span>
+                  </div>
+                )) : <p className="text-sm text-[var(--text-muted)]">Ajoutez des villes pour voir ce classement.</p>}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-sky-300 mb-3">
+                <Home className="w-4 h-4" />
+                Lieux de résidence
+              </div>
+              <div className="space-y-2">
+                {residencePlaces.length > 0 ? residencePlaces.slice(0, 5).map((visit) => (
+                  <div key={visit.id} className="text-sm">
+                    <div className="font-medium text-[var(--text-primary)]">{visit.place_name}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{visit.country_name}</div>
+                  </div>
+                )) : <p className="text-sm text-[var(--text-muted)]">Utilisez le mode “J’y vis” lors de l’ajout.</p>}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-violet-300 mb-3">
+                <Heart className="w-4 h-4" />
+                Wishlist par continent
+              </div>
+              <div className="space-y-2">
+                {wishlistByContinent.length > 0 ? wishlistByContinent.map(([continent, count]) => (
+                  <div key={continent} className="flex justify-between gap-3 text-sm">
+                    <span className="truncate text-[var(--text-secondary)]">{continent}</span>
+                    <span className="font-semibold text-violet-300">{count}</span>
+                  </div>
+                )) : <p className="text-sm text-[var(--text-muted)]">Votre wishlist est vide.</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Continent breakdown */}
         <div className="glass rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Continents explored</h2>

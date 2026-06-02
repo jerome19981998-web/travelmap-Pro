@@ -127,6 +127,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
   const [selectedVisit, setSelectedVisit] = useState<(typeof visits)[0] | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addCoords, setAddCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [addInitialQuery, setAddInitialQuery] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const { t } = useLocale();
 
@@ -296,7 +297,6 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         const isNeighborhood = type === "neighborhood";
         if (effectiveFilter === "countries") return;
         if (effectiveFilter === "cities" && isNeighborhood) return;
-        if (effectiveFilter === "neighborhoods" && !isNeighborhood) return;
 
         const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
         const visitCount = countryVisitCounts[getStoredCountryKey(visit) || ""] || 1;
@@ -457,7 +457,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
             isDark={isDark} setIsDark={setIsDark}
             visits={visits} wishlist={wishlist}
             onFlyTo={flyToVisit}
-            onAddVisit={() => { setAddCoords(null); setAddModalOpen(true); }}
+            onAddVisit={(query?: string) => { setAddInitialQuery(query || ""); setAddCoords(null); setAddModalOpen(true); }}
             searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           />
           {selectedVisit && (
@@ -466,7 +466,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           {addModalOpen && (
             <AddVisitModal
               coords={addCoords} userId={userId}
-              onClose={() => { setAddModalOpen(false); setAddCoords(null); }}
+              initialQuery={addInitialQuery}
+              onClose={() => { setAddModalOpen(false); setAddCoords(null); setAddInitialQuery(""); }}
               onVisitAdded={handleVisitAdded} onWishlistAdded={handleWishlistAdded}
             />
           )}

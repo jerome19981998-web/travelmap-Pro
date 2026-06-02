@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Map, BarChart2, Heart, Users, Settings } from "lucide-react";
+import { Map, BarChart2, Heart, CalendarDays, Settings } from "lucide-react";
 import { clsx } from "clsx";
 import { useLocale } from "@/hooks/useLocale";
 
@@ -12,8 +12,8 @@ export default function BottomNav() {
 
   const nav = [
     { href: "/dashboard", icon: Map, label: t.map, exact: true },
+    { href: "/dashboard/timeline", icon: CalendarDays, label: "Voyages" },
     { href: "/dashboard/stats", icon: BarChart2, label: t.stats },
-    { href: "/dashboard/friends", icon: Users, label: "Amis" },
     { href: "/dashboard/wishlist", icon: Heart, label: t.wishlist },
     { href: "/dashboard/settings", icon: Settings, label: t.settings },
   ];

@@ -16,7 +16,7 @@ interface Props {
   visits: Visit[];
   wishlist: WishlistItem[];
   onFlyTo: (lat: number, lng: number) => void;
-  onAddVisit: () => void;
+  onAddVisit: (query?: string) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
 }
@@ -51,6 +51,14 @@ export default function MapControls({
   const selectResult = (item: Visit | WishlistItem) => {
     if (Number.isFinite(item.lat) && Number.isFinite(item.lng)) onFlyTo(item.lat!, item.lng!);
     setSearchQuery(""); setResults([]); setSearchOpen(false);
+  };
+
+  const addFromSearch = () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+    onAddVisit(query);
+    setResults([]);
+    setSearchOpen(false);
   };
 
   const isVisit = (item: Visit | WishlistItem): item is Visit => "rating" in item;
@@ -102,6 +110,17 @@ export default function MapControls({
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+            {searchQuery.trim().length >= 2 && (
+              <div className="border-t border-[var(--surface-border)] p-2">
+                <button
+                  onClick={addFromSearch}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Ajouter "{searchQuery.trim()}"
+                </button>
               </div>
             )}
           </div>

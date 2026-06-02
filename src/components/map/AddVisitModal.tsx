@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Search, Zap, Heart, MapPin, Loader } from "lucide-react";
+import { X, Search, Zap, Heart, MapPin, Loader, Home, Flag, Route } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 import { useLocale } from "@/hooks/useLocale";
@@ -42,12 +42,13 @@ interface NominatimResult {
 interface Props {
   coords: { lat: number; lng: number } | null;
   userId: string;
+  initialQuery?: string;
   onClose: () => void;
   onVisitAdded: () => void;
   onWishlistAdded: () => void;
 }
 
-type Mode = "visit" | "quick" | "wishlist";
+type Mode = "visit" | "quick" | "wishlist" | "home" | "country" | "trip";
 
 const CONTINENTS: Record<string, string> = {
   fr: "Europe", de: "Europe", es: "Europe", it: "Europe", gb: "Europe", pt: "Europe", nl: "Europe",
@@ -61,13 +62,14 @@ const CONTINENTS: Record<string, string> = {
   au: "Oceania", nz: "Oceania",
 };
 
-export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, onWishlistAdded }: Props) {
+export default function AddVisitModal({ coords, userId, initialQuery = "", onClose, onVisitAdded, onWishlistAdded }: Props) {
   const [mode, setMode] = useState<Mode>("visit");
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [selected, setSelected] = useState<NominatimResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [tripStops, setTripStops] = useState<NominatimResult[]>([]);
 
   // Form fields
   const [visitedAt, setVisitedAt] = useState("");
@@ -77,6 +79,14 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
   const [priority, setPriority] = useState<"high" | "medium" | "low">("medium");
   const [targetYear, setTargetYear] = useState("");
   const { t } = useLocale();
+
+  useEffect(() => {
+    const query = initialQuery.trim();
+    if (!query) return;
+    setSearchQuery(query);
+    searchPlaces(query);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
   // If coords provided, reverse geocode
   useEffect(() => {
@@ -92,8 +102,8 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
       .finally(() => setLoading(false));
   }, [coords]);
 
-  const searchPlaces = async () => {
-    const query = searchQuery.trim();
+  const searchPlaces = async (queryOverride?: string) => {
+    const query = (queryOverride ?? searchQuery).trim();
     if (query.length < 2) return;
     setLoading(true);
     try {
@@ -107,6 +117,15 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
     } finally {
       setLoading(false);
     }
+  };
+
+  const addTripStop = () => {
+    const place = selected || results[0];
+    if (!place) { toast.error("Sélectionnez une étape"); return; }
+    setTripStops((current) => current.some((item) => item.place_id === place.place_id) ? current : [...current, place]);
+    setSelected(null);
+    setResults([]);
+    setSearchQuery("");
   };
 
   const getPlaceName = (r: NominatimResult) => {
@@ -159,7 +178,8 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
 
   const handleSave = async () => {
     const place = selected || (results[0] || null);
-    if (!place) { toast.error("Sélectionnez un lieu"); return; }
+    const places = mode === "trip" ? (tripStops.length > 0 ? tripStops : place ? [place] : []) : place ? [place] : [];
+    if (places.length === 0) { toast.error(mode === "trip" ? "Ajoutez au moins une étape" : "Sélectionnez un lieu"); return; }
     if (visitedAt && departedAt && departedAt < visitedAt) {
       toast.error("La date de départ doit être après l'arrivée");
       return;
@@ -167,43 +187,55 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
     setSaving(true);
     const supabase = createClient();
 
-    const lat = parseFloat(place.lat);
-    const lng = parseFloat(place.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      toast.error("Coordonnées invalides pour ce lieu");
-      setSaving(false);
-      return;
-    }
-    const placeName = getPlaceName(place);
-    const countryCode = getCountryCode(place);
-    const countryName = getCountryName(place);
-    const continent = getContinent(place);
-    const placeType = getPlaceType(place);
-
     try {
       if (mode === "wishlist") {
+        const place = places[0];
+        const lat = parseFloat(place.lat);
+        const lng = parseFloat(place.lon);
         const wishlistTable = supabase.from("wishlist") as any;
         const { error } = await wishlistTable.insert({
-          user_id: userId, place_name: placeName, place_type: placeType,
-          country_code: countryCode || null, country_name: countryName || null,
-          continent: continent || null, lat, lng,
+          user_id: userId, place_name: getPlaceName(place), place_type: getPlaceType(place),
+          country_code: getCountryCode(place) || null, country_name: getCountryName(place) || null,
+          continent: getContinent(place) || null, lat, lng,
           priority, notes: notes || null,
           target_year: targetYear ? parseInt(targetYear) : null,
         });
         if (error) toast.error(error.message);
         else { onWishlistAdded(); onClose(); }
       } else {
+        const visitRows = places.map((place, index) => {
+          const lat = parseFloat(place.lat);
+          const lng = parseFloat(place.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          const placeType = mode === "country" ? "country" : getPlaceType(place);
+          const tripNote = mode === "trip" ? `Voyage multi-etapes${notes ? ` - ${notes}` : ""}` : notes || null;
+          const homeNote = mode === "home" ? `J'y vis${notes ? ` - ${notes}` : ""}` : tripNote;
+          const date = mode === "trip" && visitedAt
+            ? new Date(new Date(visitedAt).getTime() + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+            : visitedAt || null;
+          return {
+            user_id: userId,
+            place_name: mode === "country" ? getCountryName(place) || getPlaceName(place) : getPlaceName(place),
+            place_type: placeType,
+            country_code: getCountryCode(place) || null,
+            country_name: getCountryName(place) || null,
+            continent: getContinent(place) || null,
+            lat,
+            lng,
+            visited_at: date,
+            departed_at: mode === "trip" ? null : departedAt || null,
+            notes: homeNote,
+            rating: rating || null,
+            is_quick_memory: mode === "quick",
+          };
+        }).filter(Boolean);
+
+        if (visitRows.length === 0) {
+          toast.error("Coordonnées invalides pour ce lieu");
+          return;
+        }
         const visitsTable = supabase.from("visits") as any;
-        const { error } = await visitsTable.insert({
-          user_id: userId, place_name: placeName, place_type: placeType,
-          country_code: countryCode || null, country_name: countryName || null,
-          continent: continent || null, lat, lng,
-          visited_at: visitedAt || null,
-          departed_at: departedAt || null,
-          notes: notes || null,
-          rating: rating || null,
-          is_quick_memory: mode === "quick",
-        });
+        const { error } = await visitsTable.insert(visitRows);
         if (error) toast.error(error.message);
         else { onVisitAdded(); onClose(); }
       }
@@ -233,6 +265,9 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
             {([
               { value: "visit", icon: MapPin, label: t.visit },
               { value: "quick", icon: Zap, label: t.quickMemory },
+              { value: "home", icon: Home, label: "J'y vis" },
+              { value: "country", icon: Flag, label: "Pays visité" },
+              { value: "trip", icon: Route, label: "Voyage" },
               { value: "wishlist", icon: Heart, label: t.wishlistAdd },
             ] as const).map(({ value, icon: Icon, label }) => (
               <button
@@ -303,6 +338,28 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
                 </button>
               </div>
             )}
+            {mode === "trip" && (
+              <div className="mt-2 space-y-2">
+                <button
+                  onClick={addTripStop}
+                  className="w-full rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                >
+                  Ajouter comme étape
+                </button>
+                {tripStops.length > 0 && (
+                  <div className="rounded-xl border border-[var(--surface-border)] overflow-hidden">
+                    {tripStops.map((stop, index) => (
+                      <div key={stop.place_id} className="flex items-center justify-between px-3 py-2 border-b border-[var(--surface-border)] last:border-b-0">
+                        <span className="text-xs text-[var(--text-secondary)]">{index + 1}. {getPlaceName(stop)}</span>
+                        <button onClick={() => setTripStops((current) => current.filter((item) => item.place_id !== stop.place_id))} className="text-[var(--text-muted)] hover:text-red-400">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Quick memory shortcut */}
@@ -311,9 +368,19 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
               {t.quickMemoryNote}
             </div>
           )}
+          {mode === "home" && (
+            <div className="px-4 py-3 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sm text-sky-300">
+              Ce lieu sera enregistré comme résidence dans vos notes et statistiques.
+            </div>
+          )}
+          {mode === "country" && (
+            <div className="px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-300">
+              Idéal pour marquer un pays entier comme visité, même sans ville précise.
+            </div>
+          )}
 
           {/* Visit fields */}
-          {mode === "visit" && (
+          {(mode === "visit" || mode === "home" || mode === "country" || mode === "trip") && (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -398,7 +465,7 @@ export default function AddVisitModal({ coords, userId, onClose, onVisitAdded, o
             className={`flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-colors disabled:opacity-50 ${
               mode === "wishlist" ? "bg-violet-500 hover:bg-violet-400" : "bg-emerald-500 hover:bg-emerald-400"
             }`}>
-            {saving ? t.saving : mode === "wishlist" ? t.addToWishlist : t.saveVisit}
+            {saving ? t.saving : mode === "wishlist" ? t.addToWishlist : mode === "trip" ? "Enregistrer le voyage" : t.saveVisit}
           </button>
         </div>
       </div>
