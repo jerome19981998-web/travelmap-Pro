@@ -14,14 +14,18 @@ interface Props {
   onVisitClick: (visit: VisitWithPhotos) => void;
 }
 
+const RADIUS = 1;
+const AUTO_ROTATION_SPEED = 0.0014;
+const DRAG_ROTATION_SPEED = 0.006;
+
 function getVisitColor(count: number, scheme: string = "emerald"): string {
   const schemes: Record<string, string[]> = {
     emerald: ["#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46"],
-    sky:     ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985"],
-    violet:  ["#c4b5fd", "#a78bfa", "#8b5cf6", "#7c3aed", "#6d28d9", "#5b21b6"],
-    rose:    ["#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#9f1239"],
-    amber:   ["#fde68a", "#fcd34d", "#f59e0b", "#d97706", "#b45309", "#92400e"],
-    teal:    ["#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e"],
+    sky: ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985"],
+    violet: ["#c4b5fd", "#a78bfa", "#8b5cf6", "#7c3aed", "#6d28d9", "#5b21b6"],
+    rose: ["#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#9f1239"],
+    amber: ["#fde68a", "#fcd34d", "#f59e0b", "#d97706", "#b45309", "#92400e"],
+    teal: ["#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e"],
   };
   const colors = schemes[scheme] || schemes.emerald;
   return colors[Math.min(Math.max(count - 1, 0), colors.length - 1)];
@@ -33,23 +37,6 @@ async function loadGeo() {
   const res = await fetch("https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson");
   geoCache = await res.json();
   return geoCache;
-}
-
-function hexToRgb(hex: string) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  return { r, g, b };
-}
-
-function latLngToVec3(lat: number, lng: number, radius: number) {
-  const phi = (90 - lat) * (Math.PI / 180);
-  const theta = (lng + 180) * (Math.PI / 180);
-  return {
-    x: -(radius * Math.sin(phi) * Math.cos(theta)),
-    y: radius * Math.cos(phi),
-    z: radius * Math.sin(phi) * Math.sin(theta),
-  };
 }
 
 function normalizeCountryName(value: string | null | undefined): string {
@@ -93,323 +80,382 @@ function getCountryCodeFromRecord(
   return normalizedName ? countryNameIndex[normalizedName] || null : null;
 }
 
+function getStoredCountryKey(item: { country_code: string | null; country_name: string | null }): string | null {
+  const code = item.country_code?.trim().toUpperCase();
+  if (code && /^[A-Z]{2}$/.test(code)) return code;
+  return normalizeCountryName(item.country_name) || null;
+}
+
+function getValidCoords(lat: number | null, lng: number | null): [number, number] | null {
+  return Number.isFinite(lat) && Number.isFinite(lng) ? [lat as number, lng as number] : null;
+}
+
+function latLngToVector(lat: number, lng: number, radius = RADIUS) {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lng + 180) * (Math.PI / 180);
+  return {
+    x: -(radius * Math.sin(phi) * Math.cos(theta)),
+    y: radius * Math.cos(phi),
+    z: radius * Math.sin(phi) * Math.sin(theta),
+  };
+}
+
+function getGeometryRings(geometry: any): number[][][] {
+  if (!geometry) return [];
+  if (geometry.type === "Polygon") return geometry.coordinates.map((ring: number[][]) => ring);
+  if (geometry.type === "MultiPolygon") return geometry.coordinates.flatMap((polygon: number[][][]) => polygon);
+  return [];
+}
+
+function getLargestOuterRing(geometry: any): number[][] | null {
+  const rings = getGeometryRings(geometry);
+  return rings.reduce<number[][] | null>((largest, ring) => {
+    if (!largest || ring.length > largest.length) return ring;
+    return largest;
+  }, null);
+}
+
+function getRingCenter(ring: number[][]): { lat: number; lng: number } {
+  let lat = 0;
+  let lng = 0;
+  ring.forEach(([ringLng, ringLat]) => {
+    lat += ringLat;
+    lng += ringLng;
+  });
+  return { lat: lat / ring.length, lng: lng / ring.length };
+}
+
 export default function GlobeView({ visits, wishlist, colorScheme, isDark, filterMode, onVisitClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
-  const animRef = useRef<number>(0);
+  const frameRef = useRef<number>(0);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
+
     let mounted = true;
+    let isDragging = false;
+    let isPointerOver = false;
+    let previousPointer = { x: 0, y: 0 };
 
     const init = async () => {
       const THREE = await import("three");
       if (!mounted || !containerRef.current) return;
 
-      const w = containerRef.current.offsetWidth;
-      const h = containerRef.current.offsetHeight;
+      const container = containerRef.current;
+      const width = Math.max(container.offsetWidth, 1);
+      const height = Math.max(container.offsetHeight, 1);
 
-      // Scene
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(isDark ? 0x050a14 : 0xf0f9ff);
+      scene.background = new THREE.Color(isDark ? 0x020617 : 0xeef7ff);
 
-      // Camera
-      const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
-      camera.position.z = 2.5;
+      const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+      camera.position.set(0, 0.08, 3.05);
 
-      // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(w, h);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      containerRef.current.innerHTML = "";
-      containerRef.current.appendChild(renderer.domElement);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(width, height);
       rendererRef.current = renderer;
+      container.innerHTML = "";
+      container.appendChild(renderer.domElement);
 
-      // Stars (dark mode)
-      if (isDark) {
-        const starGeo = new THREE.BufferGeometry();
-        const starCount = 2000;
-        const positions = new Float32Array(starCount * 3);
-        for (let i = 0; i < starCount * 3; i++) {
-          positions[i] = (Math.random() - 0.5) * 100;
-        }
-        starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05 });
-        scene.add(new THREE.Points(starGeo, starMat));
+      const globeGroup = new THREE.Group();
+      globeGroup.rotation.x = -0.18;
+      globeGroup.rotation.y = -0.45;
+      scene.add(globeGroup);
+
+      const starGeometry = new THREE.BufferGeometry();
+      const starCount = isDark ? 1600 : 650;
+      const starPositions = new Float32Array(starCount * 3);
+      const starColors = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount; i += 1) {
+        const radius = 6 + Math.random() * 10;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+        starPositions[i * 3 + 1] = radius * Math.cos(phi);
+        starPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+        const brightness = isDark ? 0.45 + Math.random() * 0.55 : 0.65 + Math.random() * 0.25;
+        starColors[i * 3] = brightness;
+        starColors[i * 3 + 1] = brightness;
+        starColors[i * 3 + 2] = isDark ? brightness : 1;
       }
+      starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+      starGeometry.setAttribute("color", new THREE.BufferAttribute(starColors, 3));
+      scene.add(new THREE.Points(
+        starGeometry,
+        new THREE.PointsMaterial({ size: isDark ? 0.018 : 0.012, vertexColors: true, transparent: true, opacity: isDark ? 0.8 : 0.35 })
+      ));
 
-      // Globe sphere
-      const RADIUS = 1;
-      const globeGeo = new THREE.SphereGeometry(RADIUS, 64, 64);
-      const textureLoader = new THREE.TextureLoader();
-const earthTexture = textureLoader.load(
-  isDark
-    ? "https://unpkg.com/three-globe/example/img/earth-night.jpg"
-    : "https://unpkg.com/three-globe/example/img/earth-day.jpg"
-);
-const globeMat = new THREE.MeshPhongMaterial({
-  map: earthTexture,
-  shininess: 15,
-  specular: new THREE.Color(0x333333),
-});
-      const globe = new THREE.Mesh(globeGeo, globeMat);
-      scene.add(globe);
-
-      // Atmosphere glow
-      const atmosGeo = new THREE.SphereGeometry(RADIUS * 1.02, 64, 64);
-      const atmosMat = new THREE.MeshPhongMaterial({
-        color: isDark ? 0x1a6fba : 0x60a5fa,
-        transparent: true,
-        opacity: 0.08,
-        side: THREE.FrontSide,
+      const globeMaterial = new THREE.MeshPhongMaterial({
+        color: isDark ? 0x061426 : 0xc7e8ff,
+        emissive: isDark ? 0x071a2e : 0x7dd3fc,
+        emissiveIntensity: isDark ? 0.35 : 0.1,
+        shininess: 24,
+        specular: new THREE.Color(isDark ? 0x153d5f : 0xffffff),
       });
-      scene.add(new THREE.Mesh(atmosGeo, atmosMat));
+      globeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 96, 96), globeMaterial));
 
-      // Lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.4 : 0.8);
-      scene.add(ambientLight);
-      const sunLight = new THREE.DirectionalLight(0xffffff, isDark ? 0.8 : 1.2);
-      sunLight.position.set(5, 3, 5);
-      scene.add(sunLight);
+      const gridMaterial = new THREE.MeshBasicMaterial({
+        color: isDark ? 0x1f6d8f : 0x2563eb,
+        transparent: true,
+        opacity: isDark ? 0.1 : 0.08,
+        wireframe: true,
+      });
+      globeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.004, 48, 24), gridMaterial));
 
-      // Load GeoJSON and draw countries
+      const atmosphereMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          glowColor: { value: new THREE.Color(isDark ? 0x38bdf8 : 0x0ea5e9) },
+        },
+        vertexShader: `
+          varying vec3 vNormal;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 glowColor;
+          varying vec3 vNormal;
+          void main() {
+            float intensity = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+            gl_FragColor = vec4(glowColor, intensity * 0.55);
+          }
+        `,
+      });
+      globeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.1, 96, 96), atmosphereMaterial));
+
+      scene.add(new THREE.AmbientLight(0xffffff, isDark ? 0.55 : 0.85));
+      const keyLight = new THREE.DirectionalLight(0xffffff, isDark ? 1.45 : 1.15);
+      keyLight.position.set(3.5, 2.2, 4.5);
+      scene.add(keyLight);
+      const rimLight = new THREE.DirectionalLight(isDark ? 0x38bdf8 : 0xffffff, isDark ? 0.7 : 0.25);
+      rimLight.position.set(-4, 1, -2);
+      scene.add(rimLight);
+
       const geojson = await loadGeo();
       if (!mounted) return;
 
       const countryNameIndex = buildCountryNameIndex(geojson);
       const countryVisitCounts: Record<string, number> = {};
+      const countryVisitLookup: Record<string, VisitWithPhotos> = {};
       visits.forEach((visit) => {
         const code = getCountryCodeFromRecord(visit, countryNameIndex);
-        if (code) countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+        const storedKey = getStoredCountryKey(visit);
+        if (code) {
+          countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+          countryVisitLookup[code] = countryVisitLookup[code] || visit;
+        }
+        if (storedKey) countryVisitCounts[storedKey] = (countryVisitCounts[storedKey] || 0) + 1;
       });
-      const visitedCodes = new Set(Object.keys(countryVisitCounts));
+
       const wishlistCodes = new Set(
         wishlist.map((item) => getCountryCodeFromRecord(item, countryNameIndex)).filter(Boolean) as string[]
       );
+      const visitedCodes = new Set(Object.keys(countryVisitLookup));
+      const showCountrySignal = filterMode === "countries" || filterMode === "auto" || filterMode === "wishlist";
+      const clickableObjects: any[] = [];
 
-      const showCountryFills = filterMode === "all" || filterMode === "countries";
-
-      // Draw country borders + fills
-      geojson.features.forEach((feature: any) => {
-        const code = getFeatureCountryCode(feature);
-        const isVisited = Boolean(code && visitedCodes.has(code));
-        const isWishlist = Boolean(code && wishlistCodes.has(code) && !isVisited);
-
-        if (!showCountryFills && !isVisited && !isWishlist) return;
-
-        const getCoords = (geometry: any): number[][][] => {
-          if (geometry.type === "Polygon") return [geometry.coordinates[0]];
-          if (geometry.type === "MultiPolygon") return geometry.coordinates.map((p: any) => p[0]);
-          return [];
-        };
-
-        const polys = getCoords(feature.geometry);
-
-        polys.forEach((ring: number[][]) => {
-          // Border line
-          const points: any[] = [];
-          ring.forEach(([lng, lat]) => {
-            const v3 = latLngToVec3(lat, lng, RADIUS * 1.001);
-            points.push(new THREE.Vector3(v3.x, v3.y, v3.z));
-          });
-
-          const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-          const lineColor = isVisited
-            ? getVisitColor(countryVisitCounts[code || ""] || 1, colorScheme)
-            : isWishlist ? "#8b5cf6"
-            : isDark ? "#1e3a5f" : "#93c5fd";
-
-          const rgb = hexToRgb(lineColor);
-          const lineMat = new THREE.LineBasicMaterial({
-            color: new THREE.Color(rgb.r, rgb.g, rgb.b),
-            opacity: isVisited ? 0.9 : isWishlist ? 0.6 : 0.2,
-            transparent: true,
-          });
-          scene.add(new THREE.Line(lineGeo, lineMat));
-
-          // Fill for visited/wishlist
-          if (isVisited || isWishlist) {
-            const fillColor = isVisited
-              ? getVisitColor(countryVisitCounts[code || ""] || 1, colorScheme)
-              : "#8b5cf6";
-            const rgb2 = hexToRgb(fillColor);
-
-            const shape = new THREE.Shape();
-            ring.forEach(([lng, lat], i) => {
-              const v3 = latLngToVec3(lat, lng, RADIUS * 1.002);
-              if (i === 0) shape.moveTo(v3.x, v3.y);
-              else shape.lineTo(v3.x, v3.y);
-            });
-
-            // Simple approach: use point markers per polygon center
-            let sumLat = 0, sumLng = 0;
-            ring.forEach(([lng, lat]) => { sumLat += lat; sumLng += lng; });
-            const centerLat = sumLat / ring.length;
-            const centerLng = sumLng / ring.length;
-
-            const center = latLngToVec3(centerLat, centerLng, RADIUS * 1.003);
-            const dotGeo = new THREE.SphereGeometry(0.012, 8, 8);
-            const dotMat = new THREE.MeshBasicMaterial({
-              color: new THREE.Color(rgb2.r, rgb2.g, rgb2.b),
-              transparent: true,
-              opacity: isVisited ? 0.9 : 0.5,
-            });
-            const dot = new THREE.Mesh(dotGeo, dotMat);
-            dot.position.set(center.x, center.y, center.z);
-            scene.add(dot);
-          }
-        });
+      const borderMaterial = new THREE.LineBasicMaterial({
+        color: isDark ? 0x3b82f6 : 0x1d4ed8,
+        transparent: true,
+        opacity: isDark ? 0.22 : 0.25,
       });
 
-      // Visit point markers
-      if (filterMode !== "wishlist" && filterMode !== "countries") {
-        visits.forEach(visit => {
-          if (!visit.lat || !visit.lng) return;
-          const type = visit.place_type;
-          if (filterMode === "cities" && type === "neighborhood") return;
-          if (filterMode === "neighborhoods" && type !== "neighborhood") return;
+      geojson.features.forEach((feature: any) => {
+        const code = getFeatureCountryCode(feature);
+        const visitCount = code ? countryVisitCounts[code] || 0 : 0;
+        const isVisited = Boolean(code && visitedCodes.has(code));
+        const isWishlist = Boolean(code && wishlistCodes.has(code) && !isVisited);
+        const rings = getGeometryRings(feature.geometry);
 
-          const countryCode = getCountryCodeFromRecord(visit, countryNameIndex) || "";
-          const count = countryVisitCounts[countryCode] || 1;
-          const color = getVisitColor(count, colorScheme);
-          const rgb = hexToRgb(color);
-
-          const pos = latLngToVec3(visit.lat, visit.lng, RADIUS * 1.015);
-          const size = type === "neighborhood" ? 0.008 : 0.015;
-          const geo = new THREE.SphereGeometry(size, 8, 8);
-          const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(rgb.r, rgb.g, rgb.b) });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.set(pos.x, pos.y, pos.z);
-          mesh.userData = { visit };
-          scene.add(mesh);
-
-          // Glow ring
-          const glowGeo = new THREE.RingGeometry(size * 1.5, size * 2.5, 16);
-          const glowMat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(rgb.r, rgb.g, rgb.b),
-            transparent: true, opacity: 0.4, side: THREE.DoubleSide,
+        rings.forEach((ring) => {
+          if (ring.length < 2) return;
+          const points = ring.map(([lng, lat]) => {
+            const pos = latLngToVector(lat, lng, RADIUS * 1.006);
+            return new THREE.Vector3(pos.x, pos.y, pos.z);
           });
-          const glow = new THREE.Mesh(glowGeo, glowMat);
-          glow.position.set(pos.x, pos.y, pos.z);
-          glow.lookAt(0, 0, 0);
-          scene.add(glow);
+          globeGroup.add(new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(points),
+            isVisited || isWishlist
+              ? new THREE.LineBasicMaterial({
+                  color: new THREE.Color(isVisited ? getVisitColor(visitCount || 1, colorScheme) : "#8b5cf6"),
+                  transparent: true,
+                  opacity: isVisited ? 0.75 : 0.5,
+                })
+              : borderMaterial
+          ));
+        });
+
+        if (!code || (!showCountrySignal && !isVisited && !isWishlist)) return;
+        if (!isVisited && !isWishlist) return;
+
+        const ring = getLargestOuterRing(feature.geometry);
+        if (!ring) return;
+        const center = getRingCenter(ring);
+        const color = isVisited ? getVisitColor(visitCount || 1, colorScheme) : "#8b5cf6";
+        const centerPos = latLngToVector(center.lat, center.lng, RADIUS * 1.035);
+        const normal = new THREE.Vector3(centerPos.x, centerPos.y, centerPos.z).normalize();
+
+        const platform = new THREE.Mesh(
+          new THREE.CylinderGeometry(isVisited ? 0.035 : 0.026, isVisited ? 0.055 : 0.038, isVisited ? 0.035 : 0.018, 28),
+          new THREE.MeshPhongMaterial({
+            color: new THREE.Color(color),
+            emissive: new THREE.Color(color),
+            emissiveIntensity: isVisited ? 0.42 : 0.22,
+            transparent: true,
+            opacity: isVisited ? 0.72 : 0.42,
+          })
+        );
+        platform.position.set(centerPos.x, centerPos.y, centerPos.z);
+        platform.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+        platform.userData = { visit: countryVisitLookup[code] };
+        if (isVisited) clickableObjects.push(platform);
+        globeGroup.add(platform);
+      });
+
+      if (filterMode !== "countries") {
+        visits.forEach((visit) => {
+          const coords = getValidCoords(visit.lat, visit.lng);
+          if (!coords) return;
+          const [lat, lng] = coords;
+          const isNeighborhood = visit.place_type === "neighborhood";
+          if (filterMode === "cities" && isNeighborhood) return;
+          if (filterMode === "neighborhoods" && !isNeighborhood) return;
+
+          const countryCode = getCountryCodeFromRecord(visit, countryNameIndex);
+          const storedKey = getStoredCountryKey(visit);
+          const count = countryVisitCounts[countryCode || storedKey || ""] || 1;
+          const color = getVisitColor(count, colorScheme);
+          const position = latLngToVector(lat, lng, RADIUS * 1.08);
+          const normal = new THREE.Vector3(position.x, position.y, position.z).normalize();
+
+          const marker = new THREE.Mesh(
+            new THREE.SphereGeometry(isNeighborhood ? 0.012 : 0.018, 20, 20),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(color) })
+          );
+          marker.position.set(position.x, position.y, position.z);
+          marker.userData = { visit };
+          clickableObjects.push(marker);
+          globeGroup.add(marker);
+
+          const beamEnd = latLngToVector(lat, lng, RADIUS * (isNeighborhood ? 1.05 : 1.065));
+          globeGroup.add(new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(beamEnd.x, beamEnd.y, beamEnd.z),
+              new THREE.Vector3(position.x, position.y, position.z),
+            ]),
+            new THREE.LineBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.45 })
+          ));
+
+          const halo = new THREE.Mesh(
+            new THREE.RingGeometry(isNeighborhood ? 0.018 : 0.026, isNeighborhood ? 0.03 : 0.044, 32),
+            new THREE.MeshBasicMaterial({
+              color: new THREE.Color(color),
+              transparent: true,
+              opacity: 0.28,
+              side: THREE.DoubleSide,
+              blending: THREE.AdditiveBlending,
+            })
+          );
+          halo.position.copy(marker.position);
+          halo.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+          globeGroup.add(halo);
         });
       }
 
-      // Wishlist markers
-      if (filterMode === "all" || filterMode === "wishlist") {
-        wishlist.forEach(item => {
-          if (!item.lat || !item.lng) return;
-          const pc = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#6b7280" : "#8b5cf6";
-          const rgb = hexToRgb(pc);
-          const pos = latLngToVec3(item.lat, item.lng, RADIUS * 1.015);
-          const geo = new THREE.SphereGeometry(0.012, 8, 8);
-          const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(rgb.r, rgb.g, rgb.b) });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.set(pos.x, pos.y, pos.z);
-          scene.add(mesh);
+      if (filterMode === "wishlist") {
+        wishlist.forEach((item) => {
+          const coords = getValidCoords(item.lat, item.lng);
+          if (!coords) return;
+          const [lat, lng] = coords;
+          const color = item.priority === "high" ? "#ef4444" : item.priority === "low" ? "#94a3b8" : "#8b5cf6";
+          const position = latLngToVector(lat, lng, RADIUS * 1.075);
+          const marker = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.02, 0),
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(color) })
+          );
+          marker.position.set(position.x, position.y, position.z);
+          globeGroup.add(marker);
         });
       }
 
-      // Mouse controls
-      let isDragging = false;
-      let prevMouse = { x: 0, y: 0 };
-      const rotationSpeed = 0.005;
-      let autoRotate = true;
-
-      const onMouseDown = (e: MouseEvent) => { isDragging = true; autoRotate = false; prevMouse = { x: e.clientX, y: e.clientY }; };
-      const onMouseMove = (e: MouseEvent) => {
-        if (!isDragging) return;
-        const dx = e.clientX - prevMouse.x;
-        const dy = e.clientY - prevMouse.y;
-        globe.rotation.y += dx * rotationSpeed;
-        globe.rotation.x += dy * rotationSpeed * 0.5;
-        scene.children.forEach(child => {
-          if (child !== globe && !(child instanceof THREE.Points)) {
-            child.rotation.y += dx * rotationSpeed;
-            child.rotation.x += dy * rotationSpeed * 0.5;
-          }
-        });
-        prevMouse = { x: e.clientX, y: e.clientY };
-      };
-      const onMouseUp = () => { isDragging = false; };
-
-      const onTouchStart = (e: TouchEvent) => { isDragging = true; autoRotate = false; prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY }; };
-      const onTouchMove = (e: TouchEvent) => {
-        if (!isDragging) return;
-        e.preventDefault();
-        const dx = e.touches[0].clientX - prevMouse.x;
-        const dy = e.touches[0].clientY - prevMouse.y;
-        scene.children.forEach(child => {
-          if (!(child instanceof THREE.Points)) {
-            child.rotation.y += dx * rotationSpeed;
-            child.rotation.x += dy * rotationSpeed * 0.5;
-          }
-        });
-        prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      };
-      const onTouchEnd = () => { isDragging = false; setTimeout(() => { autoRotate = true; }, 3000); };
-
-      // Click detection
       const raycaster = new THREE.Raycaster();
-      const mouse = new THREE.Vector2();
-      const onClickGlobe = (e: MouseEvent) => {
+      const pointer = new THREE.Vector2();
+
+      const updatePointer = (event: MouseEvent) => {
         const rect = renderer.domElement.getBoundingClientRect();
-        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(mouse, camera);
-        const meshes = scene.children.filter((c: any) => c.isMesh && c.userData?.visit);
-        const intersects = raycaster.intersectObjects(meshes);
-        if (intersects.length > 0) {
-          const visit = intersects[0].object.userData.visit;
-          if (visit) onVisitClick(visit);
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      };
+
+      const onPointerDown = (event: PointerEvent) => {
+        isDragging = true;
+        previousPointer = { x: event.clientX, y: event.clientY };
+        renderer.domElement.setPointerCapture(event.pointerId);
+      };
+
+      const onPointerMove = (event: PointerEvent) => {
+        if (!isDragging) return;
+        const dx = event.clientX - previousPointer.x;
+        const dy = event.clientY - previousPointer.y;
+        globeGroup.rotation.y += dx * DRAG_ROTATION_SPEED;
+        globeGroup.rotation.x = Math.max(-1.1, Math.min(1.1, globeGroup.rotation.x + dy * DRAG_ROTATION_SPEED * 0.45));
+        previousPointer = { x: event.clientX, y: event.clientY };
+      };
+
+      const onPointerUp = (event: PointerEvent) => {
+        isDragging = false;
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
         }
       };
 
-      renderer.domElement.addEventListener("mousedown", onMouseDown);
-      renderer.domElement.addEventListener("mousemove", onMouseMove);
-      renderer.domElement.addEventListener("mouseup", onMouseUp);
-      renderer.domElement.addEventListener("mouseleave", onMouseUp);
-      renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
-      renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
-      renderer.domElement.addEventListener("touchend", onTouchEnd);
-      renderer.domElement.addEventListener("click", onClickGlobe);
+      const onClick = (event: MouseEvent) => {
+        if (isDragging) return;
+        updatePointer(event);
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(clickableObjects, false);
+        const visit = intersects[0]?.object?.userData?.visit as VisitWithPhotos | undefined;
+        if (visit) onVisitClick(visit);
+      };
 
-      // Resize
       const onResize = () => {
         if (!containerRef.current) return;
-        const w = containerRef.current.offsetWidth;
-        const h = containerRef.current.offsetHeight;
-        camera.aspect = w / h;
+        const nextWidth = Math.max(containerRef.current.offsetWidth, 1);
+        const nextHeight = Math.max(containerRef.current.offsetHeight, 1);
+        camera.aspect = nextWidth / nextHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
+        renderer.setSize(nextWidth, nextHeight);
       };
+
+      renderer.domElement.addEventListener("pointerdown", onPointerDown);
+      renderer.domElement.addEventListener("pointermove", onPointerMove);
+      renderer.domElement.addEventListener("pointerup", onPointerUp);
+      renderer.domElement.addEventListener("pointercancel", onPointerUp);
+      renderer.domElement.addEventListener("mouseenter", () => { isPointerOver = true; });
+      renderer.domElement.addEventListener("mouseleave", () => { isPointerOver = false; isDragging = false; });
+      renderer.domElement.addEventListener("click", onClick);
       window.addEventListener("resize", onResize);
 
-      // Animation loop
       const animate = () => {
-        animRef.current = requestAnimationFrame(animate);
-        if (autoRotate && !isDragging) {
-          const rotY = 0.002;
-          scene.children.forEach(child => {
-            if (!(child instanceof THREE.Points)) {
-              child.rotation.y += rotY;
-            }
-          });
-        }
+        frameRef.current = requestAnimationFrame(animate);
+        if (!isDragging && !isPointerOver) globeGroup.rotation.y += AUTO_ROTATION_SPEED;
         renderer.render(scene, camera);
       };
       animate();
 
-      return () => {
-        renderer.domElement.removeEventListener("mousedown", onMouseDown);
-        renderer.domElement.removeEventListener("mousemove", onMouseMove);
-        renderer.domElement.removeEventListener("mouseup", onMouseUp);
-        renderer.domElement.removeEventListener("mouseleave", onMouseUp);
-        renderer.domElement.removeEventListener("touchstart", onTouchStart);
-        renderer.domElement.removeEventListener("touchmove", onTouchMove);
-        renderer.domElement.removeEventListener("touchend", onTouchEnd);
-        renderer.domElement.removeEventListener("click", onClickGlobe);
+      cleanupRef.current = () => {
+        renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+        renderer.domElement.removeEventListener("pointermove", onPointerMove);
+        renderer.domElement.removeEventListener("pointerup", onPointerUp);
+        renderer.domElement.removeEventListener("pointercancel", onPointerUp);
+        renderer.domElement.removeEventListener("click", onClick);
         window.removeEventListener("resize", onResize);
       };
     };
@@ -418,22 +464,24 @@ const globeMat = new THREE.MeshPhongMaterial({
 
     return () => {
       mounted = false;
-      cancelAnimationFrame(animRef.current);
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-        rendererRef.current = null;
-      }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+      cancelAnimationFrame(frameRef.current);
+      rendererRef.current?.dispose();
+      rendererRef.current = null;
+      if (containerRef.current) containerRef.current.innerHTML = "";
     };
   }, [visits, wishlist, colorScheme, isDark, filterMode, onVisitClick]);
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
-      style={{ background: isDark ? "#050a14" : "#f0f9ff" }}
+      className="w-full h-full cursor-grab active:cursor-grabbing"
+      style={{
+        background: isDark
+          ? "radial-gradient(circle at 50% 45%, #0f2a3d 0%, #07111f 42%, #020617 100%)"
+          : "radial-gradient(circle at 50% 45%, #dff6ff 0%, #eef7ff 52%, #dbeafe 100%)",
+      }}
     />
   );
 }
