@@ -60,8 +60,19 @@ function normalizeCountryName(value: unknown): string {
     .trim();
 }
 
+const COUNTRY_ALPHA3_TO_ALPHA2: Record<string, string> = {
+  FRA: "FR", ESP: "ES", ITA: "IT", GBR: "GB", USA: "US", TUR: "TR", NLD: "NL", BEL: "BE",
+  DEU: "DE", CHE: "CH", AUT: "AT", PRT: "PT", CAN: "CA", MEX: "MX", BRA: "BR", AUS: "AU",
+  IDN: "ID", GLP: "FR", MTQ: "FR", GUF: "FR", REU: "FR", MYT: "FR",
+};
+
 function getFeatureCountryCode(feature: any): string | null {
-  return feature?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase() || null;
+  const properties = feature?.properties || {};
+  const alpha2 = safeText(properties["ISO3166-1-Alpha-2"] || properties.ISO_A2 || properties.ADM0_A2).trim().toUpperCase();
+  if (alpha2 && alpha2 !== "-99" && /^[A-Z]{2}$/.test(alpha2)) return alpha2;
+  const alpha3 = safeText(properties["ISO3166-1-Alpha-3"] || properties.ISO_A3 || properties.ADM0_A3).trim().toUpperCase();
+  if (alpha3 && COUNTRY_ALPHA3_TO_ALPHA2[alpha3]) return COUNTRY_ALPHA3_TO_ALPHA2[alpha3];
+  return null;
 }
 
 function getFeatureCountryNames(feature: any): string[] {
@@ -94,6 +105,18 @@ function buildCountryNameIndex(geojson: any): Record<string, string> {
     "france metropolitaine": "FR",
     "republique francaise": "FR",
     "french republic": "FR",
+    guadeloupe: "FR",
+    martinique: "FR",
+    guyane: "FR",
+    reunion: "FR",
+    mayotte: "FR",
+    espagne: "ES",
+    italie: "IT",
+    "royaume uni": "GB",
+    "etats unis d amerique": "US",
+    "pays bas": "NL",
+    belgique: "BE",
+    turquie: "TR",
   }).forEach(([name, code]) => {
     index[name] = code;
   });
