@@ -46,8 +46,13 @@ async function loadGeo() {
   return geoCache;
 }
 
-function normalizeCountryName(value: string | null | undefined): string {
-  return (value || "")
+function safeText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function normalizeCountryName(value: unknown): string {
+  return safeText(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -74,23 +79,56 @@ function buildCountryNameIndex(geojson: any): Record<string, string> {
       if (normalized) index[normalized] = code;
     });
   });
+  Object.entries({
+    france: "FR",
+    "france metropolitaine": "FR",
+    "republique francaise": "FR",
+    "french republic": "FR",
+  }).forEach(([name, code]) => {
+    index[name] = code;
+  });
   return index;
 }
 
 function getCountryCodeFromRecord(
-  item: { country_code: string | null; country_name: string | null },
+  item: { country_code: unknown; country_name: unknown },
   countryNameIndex: Record<string, string>
 ): string | null {
-  const code = item.country_code?.trim().toUpperCase();
+  const code = safeText(item.country_code).trim().toUpperCase();
   if (code && /^[A-Z]{2}$/.test(code)) return code;
   const normalizedName = normalizeCountryName(item.country_name);
   return normalizedName ? countryNameIndex[normalizedName] || null : null;
 }
 
-function getStoredCountryKey(item: { country_code: string | null; country_name: string | null }): string | null {
-  const code = item.country_code?.trim().toUpperCase();
+function getStoredCountryKey(item: { country_code: unknown; country_name: unknown }): string | null {
+  const code = safeText(item.country_code).trim().toUpperCase();
   if (code && /^[A-Z]{2}$/.test(code)) return code;
   return normalizeCountryName(item.country_name) || null;
+}
+
+function getCountryCodeFromCoords(lat: number | null, lng: number | null): string | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const pointLat = lat as number;
+  const pointLng = lng as number;
+  const boxes = [
+    { code: "FR", minLat: 41, maxLat: 51.5, minLng: -5.5, maxLng: 10 },
+    { code: "ES", minLat: 35.5, maxLat: 44.5, minLng: -10, maxLng: 4.5 },
+    { code: "IT", minLat: 35, maxLat: 48, minLng: 6, maxLng: 19 },
+    { code: "GB", minLat: 49.5, maxLat: 61, minLng: -8.8, maxLng: 2.2 },
+    { code: "BE", minLat: 49.4, maxLat: 51.7, minLng: 2.4, maxLng: 6.5 },
+    { code: "NL", minLat: 50.7, maxLat: 53.8, minLng: 3.2, maxLng: 7.3 },
+    { code: "DE", minLat: 47, maxLat: 55.3, minLng: 5.5, maxLng: 15.5 },
+  ];
+  return boxes.find((box) =>
+    pointLat >= box.minLat && pointLat <= box.maxLat && pointLng >= box.minLng && pointLng <= box.maxLng
+  )?.code || null;
+}
+
+function resolveCountryCode(
+  item: { country_code: unknown; country_name: unknown; lat: number | null; lng: number | null },
+  countryNameIndex: Record<string, string>
+): string | null {
+  return getCountryCodeFromRecord(item, countryNameIndex) || getCountryCodeFromCoords(item.lat, item.lng);
 }
 
 function getValidCoords(lat: number | null, lng: number | null): [number, number] | null {
@@ -254,7 +292,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       const countryVisitCounts: Record<string, number> = {};
       const countryVisitLookup: Record<string, VisitWithPhotos> = {};
       visits.forEach((visit) => {
-        const code = getCountryCodeFromRecord(visit, countryNameIndex);
+        const code = resolveCountryCode(visit, countryNameIndex);
         const storedKey = getStoredCountryKey(visit);
         if (code) {
           countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
@@ -264,7 +302,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       });
 
       const wishlistCodes = new Set(
-        wishlist.map((item) => getCountryCodeFromRecord(item, countryNameIndex)).filter(Boolean) as string[]
+        wishlist.map((item) => resolveCountryCode(item, countryNameIndex)).filter(Boolean) as string[]
       );
       const visitedCodes = new Set(Object.keys(countryVisitLookup));
       const showCountrySignal = filterMode === "countries" || filterMode === "auto" || filterMode === "wishlist";
@@ -360,7 +398,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
           const endVec = new THREE.Vector3(end.x, end.y, end.z);
           const midVec = startVec.clone().add(endVec).multiplyScalar(0.5).normalize().multiplyScalar(RADIUS * 1.32);
           const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
-          const countryCode = getCountryCodeFromRecord(current, countryNameIndex);
+          const countryCode = resolveCountryCode(current, countryNameIndex);
           const color = getVisitColor(countryVisitCounts[countryCode || getStoredCountryKey(current) || ""] || 1, colorScheme);
 
           globeGroup.add(new THREE.Line(
@@ -383,7 +421,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
           if (filterMode === "cities" && isNeighborhood) return;
           if (filterMode === "neighborhoods" && !isNeighborhood) return;
 
-          const countryCode = getCountryCodeFromRecord(visit, countryNameIndex);
+          const countryCode = resolveCountryCode(visit, countryNameIndex);
           const storedKey = getStoredCountryKey(visit);
           const count = countryVisitCounts[countryCode || storedKey || ""] || 1;
           const color = getVisitColor(count, colorScheme);

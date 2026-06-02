@@ -62,6 +62,11 @@ const CONTINENTS: Record<string, string> = {
   au: "Oceania", nz: "Oceania",
 };
 
+function safeText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
 export default function AddVisitModal({ coords, userId, initialQuery = "", onClose, onVisitAdded, onWishlistAdded }: Props) {
   const [mode, setMode] = useState<Mode>("visit");
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,8 +153,8 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
     return preciseName?.trim() || r.display_name?.split(",")[0]?.trim() || "Lieu inconnu";
   };
   const getCountryName = (r: NominatimResult) => r.address?.country || "";
-  const getCountryCode = (r: NominatimResult) => (r.address?.country_code || "").toUpperCase();
-  const getContinent = (r: NominatimResult) => CONTINENTS[(r.address?.country_code || "").toLowerCase()] || "Unknown";
+  const getCountryCode = (r: NominatimResult) => safeText(r.address?.country_code).toUpperCase();
+  const getContinent = (r: NominatimResult) => CONTINENTS[safeText(r.address?.country_code).toLowerCase()] || "Unknown";
   const getPlaceType = (r: NominatimResult): string => {
     const type = r.type;
     const itemClass = r.class;

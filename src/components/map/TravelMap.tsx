@@ -47,8 +47,13 @@ function getValidCoords(lat: number | null, lng: number | null): [number, number
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat as number, lng as number] : null;
 }
 
-function normalizeCountryName(value: string | null | undefined): string {
-  return (value || "")
+function safeText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function normalizeCountryName(value: unknown): string {
+  return safeText(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -75,23 +80,56 @@ function buildCountryNameIndex(geojson: any): Record<string, string> {
       if (normalized) index[normalized] = code;
     });
   });
+  Object.entries({
+    france: "FR",
+    "france metropolitaine": "FR",
+    "republique francaise": "FR",
+    "french republic": "FR",
+  }).forEach(([name, code]) => {
+    index[name] = code;
+  });
   return index;
 }
 
 function getCountryCodeFromRecord(
-  item: { country_code: string | null; country_name: string | null },
+  item: { country_code: unknown; country_name: unknown },
   countryNameIndex: Record<string, string>
 ): string | null {
-  const code = item.country_code?.trim().toUpperCase();
+  const code = safeText(item.country_code).trim().toUpperCase();
   if (code && /^[A-Z]{2}$/.test(code)) return code;
   const normalizedName = normalizeCountryName(item.country_name);
   return normalizedName ? countryNameIndex[normalizedName] || null : null;
 }
 
-function getStoredCountryKey(item: { country_code: string | null; country_name: string | null }): string | null {
-  const code = item.country_code?.trim().toUpperCase();
+function getStoredCountryKey(item: { country_code: unknown; country_name: unknown }): string | null {
+  const code = safeText(item.country_code).trim().toUpperCase();
   if (code && /^[A-Z]{2}$/.test(code)) return code;
   return normalizeCountryName(item.country_name) || null;
+}
+
+function getCountryCodeFromCoords(lat: number | null, lng: number | null): string | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const pointLat = lat as number;
+  const pointLng = lng as number;
+  const boxes = [
+    { code: "FR", minLat: 41, maxLat: 51.5, minLng: -5.5, maxLng: 10 },
+    { code: "ES", minLat: 35.5, maxLat: 44.5, minLng: -10, maxLng: 4.5 },
+    { code: "IT", minLat: 35, maxLat: 48, minLng: 6, maxLng: 19 },
+    { code: "GB", minLat: 49.5, maxLat: 61, minLng: -8.8, maxLng: 2.2 },
+    { code: "BE", minLat: 49.4, maxLat: 51.7, minLng: 2.4, maxLng: 6.5 },
+    { code: "NL", minLat: 50.7, maxLat: 53.8, minLng: 3.2, maxLng: 7.3 },
+    { code: "DE", minLat: 47, maxLat: 55.3, minLng: 5.5, maxLng: 15.5 },
+  ];
+  return boxes.find((box) =>
+    pointLat >= box.minLat && pointLat <= box.maxLat && pointLng >= box.minLng && pointLng <= box.maxLng
+  )?.code || null;
+}
+
+function resolveCountryCode(
+  item: { country_code: unknown; country_name: unknown; lat: number | null; lng: number | null },
+  countryNameIndex: Record<string, string>
+): string | null {
+  return getCountryCodeFromRecord(item, countryNameIndex) || getCountryCodeFromCoords(item.lat, item.lng);
 }
 
 let geoCache: any = null;
@@ -143,10 +181,10 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       const supabase = createClient();
 
       const visitUpdates = visits
-        .map((visit) => ({ visit, code: getCountryCodeFromRecord(visit, countryNameIndex) }))
+        .map((visit) => ({ visit, code: resolveCountryCode(visit, countryNameIndex) }))
         .filter(({ visit, code }) => code && visit.country_code !== code);
       const wishlistUpdates = wishlist
-        .map((item) => ({ item, code: getCountryCodeFromRecord(item, countryNameIndex) }))
+        .map((item) => ({ item, code: resolveCountryCode(item, countryNameIndex) }))
         .filter(({ item, code }) => code && item.country_code !== code);
 
       if (visitUpdates.length > 0) {
@@ -235,12 +273,12 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
       const countryNameIndex = buildCountryNameIndex(geojson);
       const countryVisitCounts: Record<string, number> = {};
       visits.forEach((visit) => {
-        const code = getCountryCodeFromRecord(visit, countryNameIndex);
+        const code = resolveCountryCode(visit, countryNameIndex);
         if (code) countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
       });
       const visitedCodes = new Set(Object.keys(countryVisitCounts));
       const wishlistCodes = new Set(
-        wishlist.map((item) => getCountryCodeFromRecord(item, countryNameIndex)).filter(Boolean) as string[]
+        wishlist.map((item) => resolveCountryCode(item, countryNameIndex)).filter(Boolean) as string[]
       );
 
       L.geoJSON(geojson, {
@@ -262,7 +300,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           );
           layer.on("click", (e: any) => {
             L.DomEvent.stopPropagation(e);
-            const v = visits.find((visit) => getCountryCodeFromRecord(visit, countryNameIndex) === code);
+            const v = visits.find((visit) => resolveCountryCode(visit, countryNameIndex) === code);
             if (v) setSelectedVisit(v);
           });
         },
