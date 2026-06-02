@@ -43,8 +43,19 @@ function escapeHtml(value: string | null | undefined): string {
   }[char] || char));
 }
 
-function getValidCoords(lat: number | null, lng: number | null): [number, number] | null {
-  return Number.isFinite(lat) && Number.isFinite(lng) ? [lat as number, lng as number] : null;
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getValidCoords(lat: unknown, lng: unknown): [number, number] | null {
+  const parsedLat = toNumber(lat);
+  const parsedLng = toNumber(lng);
+  return parsedLat !== null && parsedLng !== null ? [parsedLat, parsedLng] : null;
 }
 
 function safeText(value: unknown): string {
@@ -97,6 +108,7 @@ function getCountryCodeFromRecord(
 ): string | null {
   const code = safeText(item.country_code).trim().toUpperCase();
   if (code && /^[A-Z]{2}$/.test(code)) return code;
+  if (code === "FRA" || code === "250") return "FR";
   const normalizedName = normalizeCountryName(item.country_name);
   return normalizedName ? countryNameIndex[normalizedName] || null : null;
 }
@@ -107,10 +119,10 @@ function getStoredCountryKey(item: { country_code: unknown; country_name: unknow
   return normalizeCountryName(item.country_name) || null;
 }
 
-function getCountryCodeFromCoords(lat: number | null, lng: number | null): string | null {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  const pointLat = lat as number;
-  const pointLng = lng as number;
+function getCountryCodeFromCoords(lat: unknown, lng: unknown): string | null {
+  const coords = getValidCoords(lat, lng);
+  if (!coords) return null;
+  const [pointLat, pointLng] = coords;
   const boxes = [
     { code: "FR", minLat: 41, maxLat: 51.5, minLng: -5.5, maxLng: 10 },
     { code: "ES", minLat: 35.5, maxLat: 44.5, minLng: -10, maxLng: 4.5 },
@@ -126,7 +138,7 @@ function getCountryCodeFromCoords(lat: number | null, lng: number | null): strin
 }
 
 function resolveCountryCode(
-  item: { country_code: unknown; country_name: unknown; lat: number | null; lng: number | null },
+  item: { country_code: unknown; country_name: unknown; lat: unknown; lng: unknown },
   countryNameIndex: Record<string, string>
 ): string | null {
   return getCountryCodeFromRecord(item, countryNameIndex) || getCountryCodeFromCoords(item.lat, item.lng);
