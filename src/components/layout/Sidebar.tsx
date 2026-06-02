@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/types/database";
 import type { User } from "@supabase/supabase-js";
-import { Map, BarChart2, Heart, Share2, Settings, LogOut, Trophy, ChevronRight, Users, CalendarDays } from "lucide-react";
+import { Map, BarChart2, Heart, Share2, Settings, LogOut, Trophy, ChevronRight, Users, CalendarDays, Route, ClipboardCheck } from "lucide-react";
 import Image from "next/image";
 import { clsx } from "clsx";
 import { useLocale } from "@/hooks/useLocale";
@@ -16,8 +16,10 @@ export default function Sidebar({ profile, user }: { profile: Profile | null; us
 
   const nav = [
     { href: "/dashboard", icon: Map, label: t.map, exact: true },
-    { href: "/dashboard/timeline", icon: CalendarDays, label: "Voyages" },
+    { href: "/dashboard/trips", icon: Route, label: "Voyages" },
+    { href: "/dashboard/timeline", icon: CalendarDays, label: "Timeline" },
     { href: "/dashboard/stats", icon: BarChart2, label: t.stats },
+    { href: "/dashboard/data-quality", icon: ClipboardCheck, label: "Donnees" },
     { href: "/dashboard/wishlist", icon: Heart, label: t.wishlist },
     { href: "/dashboard/badges", icon: Trophy, label: t.badges },
     { href: "/dashboard/friends", icon: Users, label: "Amis" },

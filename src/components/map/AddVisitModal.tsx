@@ -67,6 +67,14 @@ function safeText(value: unknown): string {
   return String(value);
 }
 
+function addDays(date: string, days: number): string | null {
+  if (!date) return null;
+  const parsed = new Date(date);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  parsed.setDate(parsed.getDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
 export default function AddVisitModal({ coords, userId, initialQuery = "", onClose, onVisitAdded, onWishlistAdded }: Props) {
   const [mode, setMode] = useState<Mode>("visit");
   const [searchQuery, setSearchQuery] = useState("");
@@ -240,9 +248,58 @@ export default function AddVisitModal({ coords, userId, initialQuery = "", onClo
           return;
         }
         const visitsTable = supabase.from("visits") as any;
-        const { error } = await visitsTable.insert(visitRows);
+        const { data: insertedVisits, error } = await visitsTable.insert(visitRows).select();
         if (error) toast.error(error.message);
-        else { onVisitAdded(); onClose(); }
+        else {
+          if (mode === "trip") {
+            const firstPlace = places[0];
+            const lastPlace = places[places.length - 1];
+            const title = places.length > 1
+              ? `${getPlaceName(firstPlace)} -> ${getPlaceName(lastPlace)}`
+              : `Voyage a ${getPlaceName(firstPlace)}`;
+            const lastGeneratedDate = visitedAt ? addDays(visitedAt, places.length - 1) : null;
+            const tripsTable = supabase.from("trips") as any;
+            const tripStopsTable = supabase.from("trip_stops") as any;
+            const { data: trip, error: tripError } = await tripsTable
+              .insert({
+                user_id: userId,
+                title,
+                description: notes || null,
+                started_at: visitedAt || null,
+                ended_at: departedAt || lastGeneratedDate,
+              })
+              .select()
+              .single();
+
+            if (!tripError && trip?.id) {
+              const stops = places.map((place, index) => {
+                const visit = Array.isArray(insertedVisits) ? insertedVisits[index] : null;
+                const arrivedAt = visitedAt ? addDays(visitedAt, index) : null;
+                return {
+                  trip_id: trip.id,
+                  visit_id: visit?.id || null,
+                  user_id: userId,
+                  stop_order: index,
+                  place_name: getPlaceName(place),
+                  country_code: getCountryCode(place) || null,
+                  country_name: getCountryName(place) || null,
+                  lat: parseFloat(place.lat),
+                  lng: parseFloat(place.lon),
+                  arrived_at: arrivedAt,
+                  departed_at: index === places.length - 1 ? departedAt || arrivedAt : arrivedAt,
+                  notes: notes || null,
+                };
+              });
+              const { error: stopsError } = await tripStopsTable.insert(stops);
+              if (stopsError) console.warn("Trip stops could not be saved yet", stopsError.message);
+            } else if (tripError) {
+              console.warn("Trips table is not ready yet", tripError.message);
+            }
+          }
+
+          onVisitAdded();
+          onClose();
+        }
       }
     } finally {
       setSaving(false);
