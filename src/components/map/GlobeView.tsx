@@ -52,6 +52,47 @@ function latLngToVec3(lat: number, lng: number, radius: number) {
   };
 }
 
+function normalizeCountryName(value: string | null | undefined): string {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getFeatureCountryCode(feature: any): string | null {
+  return feature?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase() || null;
+}
+
+function getFeatureCountryNames(feature: any): string[] {
+  const properties = feature?.properties || {};
+  return [properties.name, properties.ADMIN, properties.NAME, properties.NAME_EN].filter(Boolean);
+}
+
+function buildCountryNameIndex(geojson: any): Record<string, string> {
+  const index: Record<string, string> = {};
+  geojson?.features?.forEach((feature: any) => {
+    const code = getFeatureCountryCode(feature);
+    if (!code) return;
+    getFeatureCountryNames(feature).forEach((name) => {
+      const normalized = normalizeCountryName(name);
+      if (normalized) index[normalized] = code;
+    });
+  });
+  return index;
+}
+
+function getCountryCodeFromRecord(
+  item: { country_code: string | null; country_name: string | null },
+  countryNameIndex: Record<string, string>
+): string | null {
+  const code = item.country_code?.trim().toUpperCase();
+  if (code && /^[A-Z]{2}$/.test(code)) return code;
+  const normalizedName = normalizeCountryName(item.country_name);
+  return normalizedName ? countryNameIndex[normalizedName] || null : null;
+}
+
 export default function GlobeView({ visits, wishlist, colorScheme, isDark, filterMode, onVisitClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
@@ -135,23 +176,24 @@ const globeMat = new THREE.MeshPhongMaterial({
       const geojson = await loadGeo();
       if (!mounted) return;
 
+      const countryNameIndex = buildCountryNameIndex(geojson);
       const countryVisitCounts: Record<string, number> = {};
-      visits.forEach(v => {
-        if (v.country_code) {
-          const code = v.country_code.toUpperCase();
-          countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
-        }
+      visits.forEach((visit) => {
+        const code = getCountryCodeFromRecord(visit, countryNameIndex);
+        if (code) countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
       });
       const visitedCodes = new Set(Object.keys(countryVisitCounts));
-      const wishlistCodes = new Set(wishlist.map(w => w.country_code?.toUpperCase()).filter(Boolean) as string[]);
+      const wishlistCodes = new Set(
+        wishlist.map((item) => getCountryCodeFromRecord(item, countryNameIndex)).filter(Boolean) as string[]
+      );
 
       const showCountryFills = filterMode === "all" || filterMode === "countries";
 
       // Draw country borders + fills
       geojson.features.forEach((feature: any) => {
-        const code = feature.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
-        const isVisited = visitedCodes.has(code);
-        const isWishlist = wishlistCodes.has(code) && !isVisited;
+        const code = getFeatureCountryCode(feature);
+        const isVisited = Boolean(code && visitedCodes.has(code));
+        const isWishlist = Boolean(code && wishlistCodes.has(code) && !isVisited);
 
         if (!showCountryFills && !isVisited && !isWishlist) return;
 
@@ -173,7 +215,7 @@ const globeMat = new THREE.MeshPhongMaterial({
 
           const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
           const lineColor = isVisited
-            ? getVisitColor(countryVisitCounts[code] || 1, colorScheme)
+            ? getVisitColor(countryVisitCounts[code || ""] || 1, colorScheme)
             : isWishlist ? "#8b5cf6"
             : isDark ? "#1e3a5f" : "#93c5fd";
 
@@ -188,7 +230,7 @@ const globeMat = new THREE.MeshPhongMaterial({
           // Fill for visited/wishlist
           if (isVisited || isWishlist) {
             const fillColor = isVisited
-              ? getVisitColor(countryVisitCounts[code] || 1, colorScheme)
+              ? getVisitColor(countryVisitCounts[code || ""] || 1, colorScheme)
               : "#8b5cf6";
             const rgb2 = hexToRgb(fillColor);
 
@@ -227,7 +269,8 @@ const globeMat = new THREE.MeshPhongMaterial({
           if (filterMode === "cities" && type === "neighborhood") return;
           if (filterMode === "neighborhoods" && type !== "neighborhood") return;
 
-          const count = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
+          const countryCode = getCountryCodeFromRecord(visit, countryNameIndex) || "";
+          const count = countryVisitCounts[countryCode] || 1;
           const color = getVisitColor(count, colorScheme);
           const rgb = hexToRgb(color);
 

@@ -47,6 +47,53 @@ function getValidCoords(lat: number | null, lng: number | null): [number, number
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat as number, lng as number] : null;
 }
 
+function normalizeCountryName(value: string | null | undefined): string {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getFeatureCountryCode(feature: any): string | null {
+  return feature?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase() || null;
+}
+
+function getFeatureCountryNames(feature: any): string[] {
+  const properties = feature?.properties || {};
+  return [properties.name, properties.ADMIN, properties.NAME, properties.NAME_EN].filter(Boolean);
+}
+
+function buildCountryNameIndex(geojson: any): Record<string, string> {
+  const index: Record<string, string> = {};
+  geojson?.features?.forEach((feature: any) => {
+    const code = getFeatureCountryCode(feature);
+    if (!code) return;
+    getFeatureCountryNames(feature).forEach((name) => {
+      const normalized = normalizeCountryName(name);
+      if (normalized) index[normalized] = code;
+    });
+  });
+  return index;
+}
+
+function getCountryCodeFromRecord(
+  item: { country_code: string | null; country_name: string | null },
+  countryNameIndex: Record<string, string>
+): string | null {
+  const code = item.country_code?.trim().toUpperCase();
+  if (code && /^[A-Z]{2}$/.test(code)) return code;
+  const normalizedName = normalizeCountryName(item.country_name);
+  return normalizedName ? countryNameIndex[normalizedName] || null : null;
+}
+
+function getStoredCountryKey(item: { country_code: string | null; country_name: string | null }): string | null {
+  const code = item.country_code?.trim().toUpperCase();
+  if (code && /^[A-Z]{2}$/.test(code)) return code;
+  return normalizeCountryName(item.country_name) || null;
+}
+
 let geoCache: any = null;
 async function fetchGeoJSON() {
   if (geoCache) return geoCache;
@@ -135,30 +182,30 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
     const showCountryFills = effectiveFilter === "countries";
     if (!showCountryFills || visits.length === 0) return;
 
-    const countryVisitCounts: Record<string, number> = {};
-    visits.forEach(v => {
-      if (v.country_code) {
-        const code = v.country_code.toUpperCase();
-        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
-      }
-    });
-    const visitedCodes = new Set(Object.keys(countryVisitCounts));
-    const wishlistCodes = new Set(wishlist.map(w => w.country_code?.toUpperCase()).filter(Boolean) as string[]);
-
     fetchGeoJSON().then(geojson => {
       if (!countryLayerRef.current) return;
+      const countryNameIndex = buildCountryNameIndex(geojson);
+      const countryVisitCounts: Record<string, number> = {};
+      visits.forEach((visit) => {
+        const code = getCountryCodeFromRecord(visit, countryNameIndex);
+        if (code) countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
+      });
+      const visitedCodes = new Set(Object.keys(countryVisitCounts));
+      const wishlistCodes = new Set(
+        wishlist.map((item) => getCountryCodeFromRecord(item, countryNameIndex)).filter(Boolean) as string[]
+      );
 
       L.geoJSON(geojson, {
-        filter: (f: any) => visitedCodes.has(f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase()),
+        filter: (f: any) => visitedCodes.has(getFeatureCountryCode(f) || ""),
         style: (f: any) => {
-          const code = f?.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
+          const code = getFeatureCountryCode(f) || "";
           const count = countryVisitCounts[code] || 1;
           const color = getVisitColor(count, colorScheme);
           return { fillColor: color, fillOpacity: 0.45, color, weight: 1.5, opacity: 0.7 };
         },
         onEachFeature: (f: any, layer: any) => {
-          const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
-          const count = countryVisitCounts[code] || 0;
+          const code = getFeatureCountryCode(f);
+          const count = countryVisitCounts[code || ""] || 0;
           const countryName = escapeHtml(f.properties?.name);
           layer.bindTooltip(
             `<div style="font-weight:700;font-size:13px">${countryName}</div>
@@ -167,7 +214,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
           );
           layer.on("click", (e: any) => {
             L.DomEvent.stopPropagation(e);
-            const v = visits.find(v => v.country_code?.toUpperCase() === code);
+            const v = visits.find((visit) => getCountryCodeFromRecord(visit, countryNameIndex) === code);
             if (v) setSelectedVisit(v);
           });
         },
@@ -175,8 +222,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
 
       L.geoJSON(geojson, {
         filter: (f: any) => {
-          const code = f.properties?.["ISO3166-1-Alpha-2"]?.toUpperCase();
-          return wishlistCodes.has(code) && !visitedCodes.has(code);
+          const code = getFeatureCountryCode(f);
+          return Boolean(code && wishlistCodes.has(code) && !visitedCodes.has(code));
         },
         style: () => ({ fillColor: "#8b5cf6", fillOpacity: 0.12, color: "#8b5cf6", weight: 1.5, opacity: 0.5, dashArray: "5 5" }),
       }).addTo(countryLayerRef.current);
@@ -190,10 +237,8 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
 
     const countryVisitCounts: Record<string, number> = {};
     visits.forEach(v => {
-      if (v.country_code) {
-        const code = v.country_code.toUpperCase();
-        countryVisitCounts[code] = (countryVisitCounts[code] || 0) + 1;
-      }
+      const key = getStoredCountryKey(v);
+      if (key) countryVisitCounts[key] = (countryVisitCounts[key] || 0) + 1;
     });
 
     if (effectiveFilter !== "wishlist") {
@@ -207,7 +252,7 @@ export default function TravelMap({ visits: initialVisits, wishlist: initialWish
         if (effectiveFilter === "neighborhoods" && !isNeighborhood) return;
 
         const coverPhoto = visit.visit_photos?.find(p => p.is_cover)?.url || visit.visit_photos?.[0]?.url;
-        const visitCount = countryVisitCounts[visit.country_code?.toUpperCase() || ""] || 1;
+        const visitCount = countryVisitCounts[getStoredCountryKey(visit) || ""] || 1;
         const color = getVisitColor(visitCount, colorScheme);
         const size = isNeighborhood ? 8 : 12;
 
