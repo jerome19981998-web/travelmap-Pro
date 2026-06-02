@@ -69,6 +69,16 @@ function getFeatureCountryNames(feature: any): string[] {
   return [properties.name, properties.ADMIN, properties.NAME, properties.NAME_EN].filter(Boolean);
 }
 
+function getFeatureResolvedCountryCode(feature: any, countryNameIndex: Record<string, string>): string | null {
+  const code = getFeatureCountryCode(feature);
+  if (code) return code;
+  for (const name of getFeatureCountryNames(feature)) {
+    const resolved = countryNameIndex[normalizeCountryName(name)];
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
 function buildCountryNameIndex(geojson: any): Record<string, string> {
   const index: Record<string, string> = {};
   geojson?.features?.forEach((feature: any) => {
@@ -134,11 +144,24 @@ function getCountryCodeFromCoords(lat: unknown, lng: unknown): string | null {
   )?.code || null;
 }
 
+function getCountryCodeFromPlaceName(placeName: unknown): string | null {
+  const name = normalizeCountryName(placeName);
+  if (!name) return null;
+  const frenchSignals = [
+    "paris", "lyon", "marseille", "toulouse", "nice", "nantes", "strasbourg", "bordeaux", "lille",
+    "rennes", "reims", "montpellier", "grenoble", "dijon", "angers", "versailles", "saint etienne",
+    "toulon", "nancy", "metz", "rouen", "avignon", "cannes", "annecy", "villeurbanne", "courbevoie",
+    "levallois", "neuilly", "boulogne", "montreuil", "saint denis", "nanterre", "creteil", "poitiers",
+    "clermont ferrand", "aix en provence", "la rochelle", "brest", "caen", "mulhouse", "perpignan",
+  ];
+  return frenchSignals.some((signal) => name === signal || name.includes(`${signal} `) || name.includes(` ${signal}`)) ? "FR" : null;
+}
+
 function resolveCountryCode(
-  item: { country_code: unknown; country_name: unknown; lat: unknown; lng: unknown },
+  item: { country_code: unknown; country_name: unknown; place_name?: unknown; lat: unknown; lng: unknown },
   countryNameIndex: Record<string, string>
 ): string | null {
-  return getCountryCodeFromRecord(item, countryNameIndex) || getCountryCodeFromCoords(item.lat, item.lng);
+  return getCountryCodeFromRecord(item, countryNameIndex) || getCountryCodeFromCoords(item.lat, item.lng) || getCountryCodeFromPlaceName(item.place_name);
 }
 
 function getValidCoords(lat: unknown, lng: unknown): [number, number] | null {
@@ -328,7 +351,7 @@ export default function GlobeView({ visits, wishlist, colorScheme, isDark, filte
       });
 
       geojson.features.forEach((feature: any) => {
-        const code = getFeatureCountryCode(feature);
+        const code = getFeatureResolvedCountryCode(feature, countryNameIndex);
         const visitCount = code ? countryVisitCounts[code] || 0 : 0;
         const isVisited = Boolean(code && visitedCodes.has(code));
         const isWishlist = Boolean(code && wishlistCodes.has(code) && !isVisited);
