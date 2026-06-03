@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   ]);
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <QuickStats stats={stats} />
       <div className="flex-1 relative">
         <MapWrapper

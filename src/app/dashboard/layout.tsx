@@ -27,14 +27,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   };
 
   return (
-    <div className="flex min-h-screen bg-[var(--surface-bg)]">
+    <div className="app-shell flex min-h-dvh bg-[var(--surface-bg)]">
       {/* Sidebar — desktop only */}
       <div className="hidden lg:block">
         <Sidebar profile={finalProfile as any} user={user} />
       </div>
 
       {/* Main content */}
-      <main className="flex-1 lg:ml-64 min-h-screen pb-20 lg:pb-0">
+      <main className="flex-1 lg:ml-64 min-h-dvh pb-20 lg:pb-0">
         {children}
       </main>
 

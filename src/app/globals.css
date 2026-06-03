@@ -55,6 +55,17 @@ html, body {
   background: var(--surface-bg);
   color: var(--text-primary);
   font-family: 'Space Grotesk', system-ui, sans-serif;
+  min-height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* Custom scrollbar */
