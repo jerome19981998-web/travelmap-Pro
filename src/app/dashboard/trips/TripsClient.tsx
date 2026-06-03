@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Visit } from "@/types/database";
-import { AlertTriangle, CalendarDays, CheckCircle2, Flag, MapPinned, Route, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Flag, MapPinned, Plus, Route, Sparkles } from "lucide-react";
+import AddVisitModal from "@/components/map/AddVisitModal";
 
 type Trip = {
   id: string;
@@ -35,12 +38,16 @@ export default function TripsClient({
   stops,
   legacyVisits,
   setupError,
+  userId,
 }: {
   trips: Trip[];
   stops: TripStop[];
   legacyVisits: Visit[];
   setupError: string | null;
+  userId: string;
 }) {
+  const router = useRouter();
+  const [addingTrip, setAddingTrip] = useState(false);
   const stopsByTrip = stops.reduce<Record<string, TripStop[]>>((acc, stop) => {
     acc[stop.trip_id] = acc[stop.trip_id] || [];
     acc[stop.trip_id].push(stop);
@@ -61,18 +68,27 @@ export default function TripsClient({
             Regroupe plusieurs villes dans un meme voyage, avec dates, ordre et pays traverses.
           </p>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] px-3 py-2">
-            <div className="font-bold text-[var(--text-primary)]">{trips.length}</div>
-            <div className="text-[var(--text-muted)]">voyages</div>
-          </div>
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
-            <div className="font-bold text-emerald-300">{stops.length}</div>
-            <div className="text-emerald-200/80">etapes</div>
-          </div>
-          <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
-            <div className="font-bold text-sky-300">{countries.size}</div>
-            <div className="text-sky-200/80">pays</div>
+        <div className="flex flex-col gap-3 sm:items-end">
+          <button
+            onClick={() => setAddingTrip(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-colors hover:bg-emerald-400"
+          >
+            <Plus className="h-4 w-4" />
+            Nouveau voyage
+          </button>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] px-3 py-2">
+              <div className="font-bold text-[var(--text-primary)]">{trips.length}</div>
+              <div className="text-[var(--text-muted)]">voyages</div>
+            </div>
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+              <div className="font-bold text-emerald-300">{stops.length}</div>
+              <div className="text-emerald-200/80">etapes</div>
+            </div>
+            <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 px-3 py-2">
+              <div className="font-bold text-sky-300">{countries.size}</div>
+              <div className="text-sky-200/80">pays</div>
+            </div>
           </div>
         </div>
       </div>
@@ -97,8 +113,15 @@ export default function TripsClient({
           <Sparkles className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
           <h2 className="font-semibold text-[var(--text-primary)]">Aucun voyage structure pour le moment</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm text-[var(--text-secondary)]">
-            Depuis la carte, choisis le mode Voyage puis ajoute plusieurs etapes. Elles apparaitront ici avec leur ordre.
+            Cree ton premier voyage ici, ajoute plusieurs etapes, puis retrouve-les dans l&apos;ordre.
           </p>
+          <button
+            onClick={() => setAddingTrip(true)}
+            className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-400"
+          >
+            <Plus className="h-4 w-4" />
+            Ajouter un voyage
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
@@ -154,6 +177,20 @@ export default function TripsClient({
             {legacyVisits.length} etapes ont ete creees avant le nouveau modele. Elles restent visibles dans la timeline.
           </p>
         </section>
+      )}
+
+      {addingTrip && (
+        <AddVisitModal
+          coords={null}
+          userId={userId}
+          defaultMode="trip"
+          onClose={() => setAddingTrip(false)}
+          onVisitAdded={() => {
+            setAddingTrip(false);
+            router.refresh();
+          }}
+          onWishlistAdded={() => {}}
+        />
       )}
     </div>
   );

@@ -43,6 +43,7 @@ interface Props {
   coords: { lat: number; lng: number } | null;
   userId: string;
   initialQuery?: string;
+  defaultMode?: Mode;
   onClose: () => void;
   onVisitAdded: () => void;
   onWishlistAdded: () => void;
@@ -75,8 +76,8 @@ function addDays(date: string, days: number): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
-export default function AddVisitModal({ coords, userId, initialQuery = "", onClose, onVisitAdded, onWishlistAdded }: Props) {
-  const [mode, setMode] = useState<Mode>("visit");
+export default function AddVisitModal({ coords, userId, initialQuery = "", defaultMode = "visit", onClose, onVisitAdded, onWishlistAdded }: Props) {
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [selected, setSelected] = useState<NominatimResult | null>(null);

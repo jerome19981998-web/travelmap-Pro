@@ -30,6 +30,7 @@ export default async function TripsPage() {
       stops={stops || []}
       legacyVisits={legacyVisits || []}
       setupError={tripsError?.message || stopsError?.message || null}
+      userId={user!.id}
     />
   );
 }
