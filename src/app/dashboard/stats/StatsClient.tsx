@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { Globe, Map, Building, TrendingUp, Target, Home, Heart, Layers } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
+import { useLocale } from "@/hooks/useLocale";
 
 const TOTAL_COUNTRIES = 195;
 const TOTAL_CONTINENTS = 7;
@@ -15,6 +16,8 @@ interface Props {
   visits: Visit[];
   goals: AnnualGoal[];
   wishlist: WishlistItem[];
+  globalWishlist: WishlistItem[];
+  globalVisits: Visit[];
   userId: string;
 }
 
@@ -31,7 +34,8 @@ function normalizeText(value: string | null | undefined) {
     .trim();
 }
 
-export default function StatsClient({ stats, visits, goals, wishlist, userId }: Props) {
+export default function StatsClient({ stats, visits, goals, wishlist, globalWishlist, globalVisits, userId }: Props) {
+  const { t } = useLocale();
   const [activeGoalYear, setActiveGoalYear] = useState(new Date().getFullYear());
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalCountries, setGoalCountries] = useState("");
@@ -109,6 +113,32 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
     return Object.entries(map).sort(([, a], [, b]) => b - a);
   })();
 
+  const popularWishlist = (() => {
+    const map: Record<string, { name: string; country: string | null; count: number }> = {};
+    globalWishlist.forEach((item) => {
+      const key = `${normalizeText(item.place_name)}-${item.country_code || normalizeText(item.country_name)}`;
+      if (!key.trim()) return;
+      map[key] = map[key] || { name: item.place_name, country: item.country_name, count: 0 };
+      map[key].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6);
+  })();
+
+  const topRatedCountries = (() => {
+    const map: Record<string, { country: string; total: number; count: number }> = {};
+    globalVisits.forEach((visit) => {
+      if (!visit.country_name || !visit.rating) return;
+      map[visit.country_name] = map[visit.country_name] || { country: visit.country_name, total: 0, count: 0 };
+      map[visit.country_name].total += visit.rating;
+      map[visit.country_name].count += 1;
+    });
+    return Object.values(map)
+      .filter((item) => item.count >= 1)
+      .map((item) => ({ ...item, average: item.total / item.count }))
+      .sort((a, b) => b.average - a.average || b.count - a.count)
+      .slice(0, 6);
+  })();
+
   const thisYearGoal = goals.find(g => g.year === activeGoalYear);
   const thisYearVisits = visits.filter(v => v.visited_at && new Date(v.visited_at).getFullYear() === activeGoalYear);
   const thisYearCountries = new Set(thisYearVisits.map(v => v.country_code).filter(Boolean)).size;
@@ -125,14 +155,14 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
       ? await supabase.from("annual_goals").update(data).eq("id", thisYearGoal.id)
       : await supabase.from("annual_goals").insert(data);
     if (error) toast.error(error.message);
-    else { toast.success("Goal saved!"); setEditingGoal(false); }
+    else { toast.success(t.goalSaved); setEditingGoal(false); }
   };
 
   const statCards = [
-    { icon: Globe, label: "Countries", value: countries, sub: `of ${TOTAL_COUNTRIES} (${Math.round(countries/TOTAL_COUNTRIES*100)}%)`, color: "emerald" },
-    { icon: Map, label: "Continents", value: continents, sub: `of ${TOTAL_CONTINENTS}`, color: "sky" },
-    { icon: Building, label: "Cities & places", value: cities, sub: "logged", color: "violet" },
-    { icon: TrendingUp, label: "Total visits", value: total, sub: "all time", color: "amber" },
+    { icon: Globe, label: t.countries, value: countries, sub: `${t.of} ${TOTAL_COUNTRIES} (${Math.round(countries/TOTAL_COUNTRIES*100)}%)`, color: "emerald" },
+    { icon: Map, label: t.continents, value: continents, sub: `${t.of} ${TOTAL_CONTINENTS}`, color: "sky" },
+    { icon: Building, label: t.citiesPlaces, value: cities, sub: t.logged, color: "violet" },
+    { icon: TrendingUp, label: t.totalVisits, value: total, sub: t.allTime, color: "amber" },
   ];
 
   const colorMap: Record<string, string> = {
@@ -143,11 +173,11 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="min-h-dvh overflow-y-auto p-4 pb-28 sm:p-6 lg:pb-8 space-y-6 max-w-6xl">
       <div>
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Your Travel Stats</h1>
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">{t.yourStats}</h1>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          {stats?.first_visit ? `Travelling since ${new Date(stats.first_visit).getFullYear()}` : "Start logging your adventures!"}
+          {stats?.first_visit ? `${t.travellingSince} ${new Date(stats.first_visit).getFullYear()}` : t.startLogging}
         </p>
       </div>
 
@@ -168,12 +198,12 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Smart insights */}
         <div className="glass rounded-2xl p-5 lg:col-span-2">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Smart insights</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t.smartInsights}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300 mb-3">
                 <Layers className="w-4 h-4" />
-                Villes par pays
+                {t.citiesByCountry}
               </div>
               <div className="space-y-2">
                 {citiesByCountry.length > 0 ? citiesByCountry.slice(0, 5).map((item) => (
@@ -181,14 +211,14 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
                     <span className="truncate text-[var(--text-secondary)]">{item.country}</span>
                     <span className="font-semibold text-emerald-300">{item.count}</span>
                   </div>
-                )) : <p className="text-sm text-[var(--text-muted)]">Ajoutez des villes pour voir ce classement.</p>}
+                )) : <p className="text-sm text-[var(--text-muted)]">{t.addCitiesForRanking}</p>}
               </div>
             </div>
 
             <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-sky-300 mb-3">
                 <Home className="w-4 h-4" />
-                Lieux de résidence
+                {t.residencePlaces}
               </div>
               <div className="space-y-2">
                 {residencePlaces.length > 0 ? residencePlaces.slice(0, 5).map((visit) => (
@@ -196,14 +226,14 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
                     <div className="font-medium text-[var(--text-primary)]">{visit.place_name}</div>
                     <div className="text-xs text-[var(--text-muted)]">{visit.country_name}</div>
                   </div>
-                )) : <p className="text-sm text-[var(--text-muted)]">Utilisez le mode “J’y vis” lors de l’ajout.</p>}
+                )) : <p className="text-sm text-[var(--text-muted)]">{t.useHomeMode}</p>}
               </div>
             </div>
 
             <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-violet-300 mb-3">
                 <Heart className="w-4 h-4" />
-                Wishlist par continent
+                {t.wishlistByContinent}
               </div>
               <div className="space-y-2">
                 {wishlistByContinent.length > 0 ? wishlistByContinent.map(([continent, count]) => (
@@ -211,7 +241,43 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
                     <span className="truncate text-[var(--text-secondary)]">{continent}</span>
                     <span className="font-semibold text-violet-300">{count}</span>
                   </div>
-                )) : <p className="text-sm text-[var(--text-muted)]">Votre wishlist est vide.</p>}
+                )) : <p className="text-sm text-[var(--text-muted)]">{t.emptyWishlistShort}</p>}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-rose-300 mb-3">
+                <Heart className="w-4 h-4" />
+                {t.popularWishlist}
+              </div>
+              <div className="space-y-2">
+                {popularWishlist.length > 0 ? popularWishlist.map((item, index) => (
+                  <div key={`${item.name}-${item.country}-${index}`} className="flex items-start justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate text-[var(--text-primary)]">{item.name}</div>
+                      <div className="text-xs text-[var(--text-muted)]">{item.country || t.unknownCountry}</div>
+                    </div>
+                    <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-semibold text-rose-300">{item.count}</span>
+                  </div>
+                )) : <p className="text-sm text-[var(--text-muted)]">{t.notEnoughWishlistData}</p>}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--surface-border)] bg-white/[0.03] p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-amber-300 mb-3">
+                <TrendingUp className="w-4 h-4" />
+                {t.topRatedCountries}
+              </div>
+              <div className="space-y-2">
+                {topRatedCountries.length > 0 ? topRatedCountries.map((item) => (
+                  <div key={item.country} className="flex items-start justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate text-[var(--text-primary)]">{item.country}</div>
+                      <div className="text-xs text-[var(--text-muted)]">{item.count} {item.count > 1 ? t.ratings : t.ratingLower}</div>
+                    </div>
+                    <span className="font-semibold text-amber-300">{item.average.toFixed(1)} ★</span>
+                  </div>
+                )) : <p className="text-sm text-[var(--text-muted)]">{t.notEnoughRatingData}</p>}
               </div>
             </div>
           </div>
@@ -219,7 +285,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
 
         {/* Continent breakdown */}
         <div className="glass rounded-2xl p-5">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Continents explored</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t.continentsExplored}</h2>
           <div className="space-y-3">
             {continentData.map(({ name, visited, total, pct }) => (
               <div key={name}>
@@ -240,7 +306,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
 
         {/* Visits by year */}
         <div className="glass rounded-2xl p-5">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Visits per year</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t.visitsPerYear}</h2>
           {yearData.length > 0 ? (
             <ResponsiveContainer width="100%" height={160}>
               <BarChart data={yearData} barSize={20}>
@@ -255,7 +321,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
             </ResponsiveContainer>
           ) : (
             <div className="h-40 flex items-center justify-center text-sm text-[var(--text-muted)]">
-              No data yet — log your first visit!
+              {t.noDataYet}
             </div>
           )}
         </div>
@@ -263,7 +329,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
         {/* Top countries */}
         {countryBreakdown.length > 0 && (
           <div className="glass rounded-2xl p-5">
-            <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Most visited countries</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t.mostVisitedCountries}</h2>
             <div className="space-y-2">
               {countryBreakdown.map(({ name, count }, i) => (
                 <div key={name} className="flex items-center gap-3">
@@ -271,7 +337,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
                   <div className="flex-1 flex items-center gap-2">
                     <span className="text-sm text-[var(--text-primary)]">{name}</span>
                   </div>
-                  <span className="text-xs font-medium text-emerald-400">{count} {count === 1 ? "visit" : "visits"}</span>
+                  <span className="text-xs font-medium text-emerald-400">{count} {count === 1 ? t.visitLower : t.visitsLower}</span>
                 </div>
               ))}
             </div>
@@ -283,7 +349,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
               <Target className="w-4 h-4 text-amber-400" />
-              {activeGoalYear} Goal
+              {activeGoalYear} {t.annualGoal}
             </h2>
             <div className="flex items-center gap-2">
               <select
@@ -299,7 +365,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
                 onClick={() => { setEditingGoal(!editingGoal); setGoalCountries(thisYearGoal?.target_countries?.toString() || ""); setGoalCities(thisYearGoal?.target_cities?.toString() || ""); }}
                 className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
               >
-                {editingGoal ? "Cancel" : thisYearGoal ? "Edit" : "Set goal"}
+                {editingGoal ? t.cancel : thisYearGoal ? t.edit : t.setGoal}
               </button>
             </div>
           </div>
@@ -308,18 +374,18 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-[var(--text-muted)] mb-1">Countries target</label>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1">{t.targetCountries}</label>
                   <input type="number" value={goalCountries} onChange={e => setGoalCountries(e.target.value)} placeholder="10"
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-[var(--surface-border)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--text-muted)] mb-1">Cities target</label>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1">{t.targetCities}</label>
                   <input type="number" value={goalCities} onChange={e => setGoalCities(e.target.value)} placeholder="20"
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-[var(--surface-border)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50" />
                 </div>
               </div>
               <button onClick={saveGoal} className="w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-colors">
-                Save goal
+                {t.saveGoal}
               </button>
             </div>
           ) : thisYearGoal ? (
@@ -327,7 +393,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
               {thisYearGoal.target_countries && (
                 <div>
                   <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-[var(--text-secondary)]">Countries visited</span>
+                    <span className="text-[var(--text-secondary)]">{t.countriesVisited}</span>
                     <span className="text-amber-400 font-medium">{thisYearCountries}/{thisYearGoal.target_countries}</span>
                   </div>
                   <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
@@ -341,7 +407,7 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
               {thisYearGoal.target_cities && (
                 <div>
                   <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-[var(--text-secondary)]">Visits this year</span>
+                    <span className="text-[var(--text-secondary)]">{t.visitsThisYear}</span>
                     <span className="text-amber-400 font-medium">{thisYearVisits.length}/{thisYearGoal.target_cities}</span>
                   </div>
                   <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
@@ -354,14 +420,14 @@ export default function StatsClient({ stats, visits, goals, wishlist, userId }: 
               )}
               {thisYearCountries >= (thisYearGoal.target_countries || Infinity) && (
                 <div className="text-center py-2 text-sm text-amber-300 bg-amber-500/10 rounded-xl border border-amber-500/20">
-                  🎉 Goal achieved! Incredible!
+                  {t.goalAchieved}
                 </div>
               )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
               <Target className="w-8 h-8 text-[var(--text-muted)]" />
-              <p className="text-sm text-[var(--text-muted)]">No goal set for {activeGoalYear}</p>
+              <p className="text-sm text-[var(--text-muted)]">{t.noGoalSet} {activeGoalYear}</p>
             </div>
           )}
         </div>

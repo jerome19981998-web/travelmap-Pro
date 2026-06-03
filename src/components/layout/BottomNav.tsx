@@ -12,7 +12,7 @@ export default function BottomNav() {
 
   const nav = [
     { href: "/dashboard", icon: Map, label: t.map, exact: true },
-    { href: "/dashboard/trips", icon: Route, label: "Voyages" },
+    { href: "/dashboard/trips", icon: Route, label: t.trips },
     { href: "/dashboard/stats", icon: BarChart2, label: t.stats },
     { href: "/dashboard/wishlist", icon: Heart, label: t.wishlist },
     { href: "/dashboard/settings", icon: Settings, label: t.settings },

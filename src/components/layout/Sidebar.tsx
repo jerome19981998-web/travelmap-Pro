@@ -16,14 +16,14 @@ export default function Sidebar({ profile, user }: { profile: Profile | null; us
 
   const nav = [
     { href: "/dashboard", icon: Map, label: t.map, exact: true },
-    { href: "/dashboard/trips", icon: Route, label: "Voyages" },
-    { href: "/dashboard/timeline", icon: CalendarDays, label: "Timeline" },
+    { href: "/dashboard/trips", icon: Route, label: t.trips },
+    { href: "/dashboard/timeline", icon: CalendarDays, label: t.timeline },
     { href: "/dashboard/stats", icon: BarChart2, label: t.stats },
-    { href: "/dashboard/data-quality", icon: ClipboardCheck, label: "Donnees" },
+    { href: "/dashboard/data-quality", icon: ClipboardCheck, label: t.data },
     { href: "/dashboard/wishlist", icon: Heart, label: t.wishlist },
     { href: "/dashboard/badges", icon: Trophy, label: t.badges },
-    { href: "/dashboard/friends", icon: Users, label: "Amis" },
-    { href: "/dashboard/groups", icon: Users, label: "Groupes" },
+    { href: "/dashboard/friends", icon: Users, label: t.friends },
+    { href: "/dashboard/groups", icon: Users, label: t.groups },
     { href: "/dashboard/share", icon: Share2, label: t.share },
     { href: "/dashboard/settings", icon: Settings, label: t.settings },
   ];
